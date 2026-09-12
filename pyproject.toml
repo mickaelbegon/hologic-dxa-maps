@@ -118,10 +118,13 @@ ignore_missing_imports = true
 # ---------------------------------------------------------------------------
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+pythonpath = ["src", "tests"]
+tmp_path_retention_policy = "failed"
 addopts = [
   "--strict-markers",
   "--tb=short",
   "-v",
+  "--basetemp=.pytest_tmp",
 ]
 markers = [
   "real_data: requires real DICOM files (skipped by default)",

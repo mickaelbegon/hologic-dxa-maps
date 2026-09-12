@@ -38,7 +38,7 @@ def _make_file_meta(sop_class_uid: str, sop_instance_uid: str) -> FileMetaDatase
 
 
 def _base_dataset(sop_class_uid: str, modality: str = "OT") -> Dataset:
-    """Minimal Dataset with standard DICOM identifiers — no PHI."""
+    """Minimal Dataset with standard DICOM identifiers -- no PHI."""
     ds = Dataset()
     sop_uid = generate_uid()
     ds.SOPClassUID = sop_class_uid
@@ -100,18 +100,18 @@ def make_hologic_archive(
     ----------
     p_declared_length:
         Explicit declared length stored in the P_FILE_LENGTH tag.
-        ``None`` means use ``len(p_data)`` (before any padding).
+        None means use len(p_data) (before any padding).
     r_declared_length:
         Explicit declared length for the R file.
     add_padding_byte:
-        When ``True``, one null byte is appended to each blob to simulate
+        When True, one null byte is appended to each blob to simulate
         DICOM odd-length padding. The declared lengths are set to the
-        *original* lengths so the padding byte triggers no warning.
+        original lengths so the padding byte triggers no warning.
     include_p:
-        When ``False``, the P file tags are omitted entirely (simulates
+        When False, the P file tags are omitted entirely (simulates
         partial archive).
     include_r:
-        When ``False``, the R file tags are omitted entirely (simulates
+        When False, the R file tags are omitted entirely (simulates
         partial archive).
     """
     ds = _base_dataset(_SC_SOP_CLASS, modality="BMD")
@@ -129,7 +129,7 @@ def make_hologic_archive(
     p_len = p_declared_length if p_declared_length is not None else len(p_data)
     r_len = r_declared_length if r_declared_length is not None else len(r_data)
 
-    # Register private block — creator goes to (0023,0010)
+    # Register private block -- creator goes to (0023,0010)
     block = ds.private_block(0x0023, "HOLOGIC, Inc.", create=True)
     block.add_new(0x00, "LO", "HOLOGIC_ENCODING_V1")  # (0023,1000) ENCODING_SCHEME
     block.add_new(0x01, "LO", "scan.p")               # (0023,1001) P_FILE_NAME
@@ -217,10 +217,10 @@ def make_parametric_map(
     Parameters
     ----------
     include_rwvm:
-        When ``False``, the RealWorldValueMappingSequence is omitted.
+        When False, the RealWorldValueMappingSequence is omitted.
     include_float_pixels:
-        When ``False``, FloatPixelData is omitted (creates a map with no
-        quantitative pixel data — classified as NOT_ELIGIBLE).
+        When False, FloatPixelData is omitted (creates a map with no
+        quantitative pixel data -- classified as NOT_ELIGIBLE).
     """
     ds = _base_dataset(_PM_SOP_CLASS, modality="OT")
 
@@ -246,8 +246,9 @@ def make_parametric_map(
 
     if include_rwvm:
         rwvm_item = Dataset()
+        # Use values that fit in signed short (DICOM VR US or SS)
         rwvm_item.RealWorldValueFirstValueMapped = 0
-        rwvm_item.RealWorldValueLastValueMapped = 65535
+        rwvm_item.RealWorldValueLastValueMapped = 4095
         rwvm_item.RealWorldValueSlope = 1.0
         rwvm_item.RealWorldValueIntercept = 0.0
         rwvm_item.LUTExplanation = f"Areal density ({unit_code})"
@@ -268,8 +269,8 @@ def make_truncated_pr_archive() -> pydicom.Dataset:
     """Archive DICOM where P file data is shorter than declared length.
 
     The declared length exceeds the actual length by 10 bytes, which is
-    outside the ±1 tolerance for odd-length DICOM padding. This triggers
-    a length-mismatch warning in ``inspect_private_tags``.
+    outside the +/-1 tolerance for odd-length DICOM padding. This triggers
+    a length-mismatch warning in inspect_private_tags.
     """
     p_data = b"SHORT_P_DATA"
     return make_hologic_archive(

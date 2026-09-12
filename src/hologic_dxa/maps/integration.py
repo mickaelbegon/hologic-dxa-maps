@@ -160,7 +160,10 @@ def compute_mass_properties(
     Parameters
     ----------
     bundle:
-        ``QuantitativeMapBundle`` containing maps, masks, and geometry.
+        ``QuantitativeMapBundle`` from ``hologic_dxa.models``.  Individual maps
+        (``bundle.fat``, ``bundle.lean``, ``bundle.bmc``, ``bundle.total``) are
+        ``QuantitativeMap`` objects with a ``.values`` ndarray.
+        Geometry is accessed via ``bundle.geometry`` (a ``MapGeometry``).
     region_masks:
         Optional additional named boolean masks keyed by region name.
         Merged with the bundle's whole-body valid mask under the key
@@ -191,26 +194,44 @@ def compute_mass_properties(
         If pixel_area is unavailable in the bundle geometry, or if no density
         map is present for mechanical property computation.
     """
-    validate_pixel_area(bundle.geometry.pixel_area_cm2)
+    from hologic_dxa.maps.geometry import pixel_coordinates_mm
 
-    pixel_area = bundle.geometry.pixel_area_cm2
-    x_mm: np.ndarray = bundle.geometry.x_coordinates_mm
-    y_mm: np.ndarray = bundle.geometry.y_coordinates_mm
-
-    valid_mask: np.ndarray = (
-        bundle.masks.valid
-        if bundle.masks.valid is not None
-        else bundle.masks.body
+    # Resolve pixel area: prefer per-map value, fall back to geometry scalar
+    first_qmap = next(
+        (m for m in (bundle.fat, bundle.lean, bundle.bmc, bundle.total) if m is not None),
+        None,
     )
+    if first_qmap is not None and first_qmap.pixel_area_cm2 is not None:
+        pixel_area: np.ndarray | float = first_qmap.pixel_area_cm2
+    else:
+        pixel_area = bundle.geometry.pixel_area_cm2_scalar()
+
+    validate_pixel_area(pixel_area)
+
+    # Resolve coordinate arrays
+    if first_qmap is not None and first_qmap.x_coordinates_mm is not None:
+        x_mm: np.ndarray = first_qmap.x_coordinates_mm
+        y_mm: np.ndarray = first_qmap.y_coordinates_mm  # type: ignore[assignment]
+    else:
+        x_mm, y_mm = pixel_coordinates_mm(
+            bundle.geometry.rows,
+            bundle.geometry.columns,
+            bundle.geometry.pixel_spacing_mm[0],
+            bundle.geometry.pixel_spacing_mm[1],
+            bundle.geometry.origin_mm,
+        )
+
+    valid_mask: np.ndarray = bundle.valid_mask
 
     all_masks: dict[str, np.ndarray] = {"whole_body": valid_mask}
     if region_masks:
         all_masks.update(region_masks)
 
-    fat: np.ndarray | None = bundle.maps.fat_areal_density_g_cm2
-    lean: np.ndarray | None = bundle.maps.lean_areal_density_g_cm2
-    bmc: np.ndarray | None = bundle.maps.bmc_areal_density_g_cm2
-    total: np.ndarray | None = bundle.maps.total_areal_density_g_cm2
+    # Extract raw numpy arrays from QuantitativeMap objects
+    fat: np.ndarray | None = bundle.fat.values if bundle.fat is not None else None
+    lean: np.ndarray | None = bundle.lean.values if bundle.lean is not None else None
+    bmc: np.ndarray | None = bundle.bmc.values if bundle.bmc is not None else None
+    total: np.ndarray | None = bundle.total.values if bundle.total is not None else None
 
     density_for_mechanics: np.ndarray | None = next(
         (arr for arr in (total, fat, lean, bmc) if arr is not None), None

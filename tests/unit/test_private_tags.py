@@ -5,7 +5,7 @@ from __future__ import annotations
 import pytest
 
 from hologic_dxa.dicom.private_tags import PRDiagnosis, inspect_private_tags
-from tests.synthetic_data.generators import (
+from synthetic_data.generators import (
     make_empty_pr_archive,
     make_hologic_archive,
     make_secondary_capture,
@@ -39,7 +39,7 @@ def _result_contains_phi(result: object) -> bool:
 
 class TestSecondaryCapture:
     def test_secondary_capture_returns_no_pr(self, secondary_capture_ds):
-        """Secondary Capture → diagnosis is SECONDARY_CAPTURE_ONLY or ARCHIVE_DATA_ABSENT."""
+        """Secondary Capture: diagnosis is SECONDARY_CAPTURE_ONLY or ARCHIVE_DATA_ABSENT."""
         result = inspect_private_tags(secondary_capture_ds)
         assert result.diagnosis in (
             PRDiagnosis.SECONDARY_CAPTURE_ONLY,
@@ -55,7 +55,7 @@ class TestSecondaryCapture:
 
 class TestHologicArchivePRPresent:
     def test_hologic_archive_pr_present(self, hologic_archive_ds):
-        """Full archive (P + R data) → PR_PRESENT."""
+        """Full archive (P + R data) produces PR_PRESENT."""
         result = inspect_private_tags(hologic_archive_ds)
         assert result.diagnosis == PRDiagnosis.PR_PRESENT
 
@@ -79,7 +79,7 @@ class TestHologicArchivePRPresent:
 
 class TestHologicArchivePRPartial:
     def test_hologic_archive_pr_partial(self, hologic_archive_p_only_ds):
-        """Archive with only P data (no R tags) → PR_PARTIAL."""
+        """Archive with only P data (no R tags) produces PR_PARTIAL."""
         result = inspect_private_tags(hologic_archive_p_only_ds)
         assert result.diagnosis == PRDiagnosis.PR_PARTIAL
 
@@ -91,7 +91,7 @@ class TestHologicArchivePRPartial:
 
 class TestLengthMismatch:
     def test_length_mismatch_warning(self, hologic_archive_truncated_ds):
-        """Declared length differs from actual by >1 → length mismatch warning."""
+        """Declared length differs from actual by >1: length mismatch warning expected."""
         result = inspect_private_tags(hologic_archive_truncated_ds)
         mismatch_warnings = [w for w in result.warnings if "mismatch" in w.lower()]
         assert len(mismatch_warnings) > 0, (
@@ -103,13 +103,12 @@ class TestLengthMismatch:
     ):
         """A length mismatch is a warning, not a disqualification from PR_PRESENT."""
         result = inspect_private_tags(hologic_archive_truncated_ds)
-        # Truncated archive still has both P (truncated) and R blobs; actual > 0
         assert result.diagnosis == PRDiagnosis.PR_PRESENT
 
 
 class TestPaddingByteAllowed:
     def test_padding_byte_allowed(self, hologic_archive_padded_ds):
-        """Declared length = actual - 1 (DICOM odd-length padding) → no length warning."""
+        """Declared length = actual - 1 (DICOM odd-length padding): no length warning."""
         result = inspect_private_tags(hologic_archive_padded_ds)
         mismatch_warnings = [w for w in result.warnings if "mismatch" in w.lower()]
         assert len(mismatch_warnings) == 0, (
@@ -118,7 +117,7 @@ class TestPaddingByteAllowed:
         )
 
     def test_padding_byte_archive_is_pr_present(self, hologic_archive_padded_ds):
-        """Padded archive with both blobs → PR_PRESENT."""
+        """Padded archive with both blobs produces PR_PRESENT."""
         result = inspect_private_tags(hologic_archive_padded_ds)
         assert result.diagnosis == PRDiagnosis.PR_PRESENT
 
@@ -154,7 +153,6 @@ class TestNoPHI:
         result = inspect_private_tags(hologic_archive_ds)
         for key, meta in result.raw_private_tags.items():
             assert "VR" in meta, f"Missing VR metadata for tag {key}"
-            # raw bytes must not appear as a value
             assert not isinstance(meta.get("value"), (bytes, bytearray)), (
                 f"Raw bytes found in raw_private_tags[{key}]. "
                 "Only length/VR metadata should be stored."

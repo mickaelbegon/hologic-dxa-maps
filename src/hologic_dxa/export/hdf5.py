@@ -73,27 +73,55 @@ def export_bundle_hdf5(
 
     missing: list[str] = []
 
+    # --- Resolve geometry-derived arrays -----------------------------------
+    # bundle.geometry is a MapGeometry (rows, columns, pixel_spacing_mm, origin_mm).
+    # Coordinate arrays and pixel area may be stored on individual QuantitativeMap
+    # objects; fall back to computing them from MapGeometry.
+    from hologic_dxa.maps.geometry import pixel_coordinates_mm as _pixel_coords_mm
+
+    first_qmap = next(
+        (m for m in (bundle.fat, bundle.lean, bundle.bmc, bundle.total) if m is not None),
+        None,
+    )
+
+    if first_qmap is not None and first_qmap.pixel_area_cm2 is not None:
+        pixel_area_data: np.ndarray | float = first_qmap.pixel_area_cm2
+    else:
+        pixel_area_data = bundle.geometry.pixel_area_cm2_scalar()
+
+    if first_qmap is not None and first_qmap.x_coordinates_mm is not None:
+        x_coords: np.ndarray | None = first_qmap.x_coordinates_mm
+        y_coords: np.ndarray | None = first_qmap.y_coordinates_mm
+    else:
+        x_coords, y_coords = _pixel_coords_mm(
+            bundle.geometry.rows,
+            bundle.geometry.columns,
+            bundle.geometry.pixel_spacing_mm[0],
+            bundle.geometry.pixel_spacing_mm[1],
+            bundle.geometry.origin_mm,
+        )
+
     with h5py.File(output_path, "w") as f:
         # ------------------------------------------------------------------ maps
         maps_grp = f.create_group("maps")
         _write_float_dataset(
             maps_grp, "fat_areal_density_g_cm2",
-            getattr(bundle.maps, "fat_areal_density_g_cm2", None),
+            bundle.fat.values if bundle.fat is not None else None,
             units="g/cm^2", missing=missing, **compress_kwargs,
         )
         _write_float_dataset(
             maps_grp, "lean_areal_density_g_cm2",
-            getattr(bundle.maps, "lean_areal_density_g_cm2", None),
+            bundle.lean.values if bundle.lean is not None else None,
             units="g/cm^2", missing=missing, **compress_kwargs,
         )
         _write_float_dataset(
             maps_grp, "bmc_areal_density_g_cm2",
-            getattr(bundle.maps, "bmc_areal_density_g_cm2", None),
+            bundle.bmc.values if bundle.bmc is not None else None,
             units="g/cm^2", missing=missing, **compress_kwargs,
         )
         _write_float_dataset(
             maps_grp, "total_areal_density_g_cm2",
-            getattr(bundle.maps, "total_areal_density_g_cm2", None),
+            bundle.total.values if bundle.total is not None else None,
             units="g/cm^2", missing=missing, **compress_kwargs,
         )
 
@@ -101,17 +129,17 @@ def export_bundle_hdf5(
         masks_grp = f.create_group("masks")
         _write_bool_dataset(
             masks_grp, "body",
-            getattr(bundle.masks, "body", None),
+            getattr(bundle, "body_mask", None),
             missing=missing, **compress_kwargs,
         )
         _write_bool_dataset(
             masks_grp, "bone",
-            getattr(bundle.masks, "bone", None),
+            getattr(bundle, "bone_mask", None),
             missing=missing, **compress_kwargs,
         )
         _write_bool_dataset(
             masks_grp, "valid",
-            getattr(bundle.masks, "valid", None),
+            bundle.valid_mask,
             missing=missing, **compress_kwargs,
         )
 
@@ -119,17 +147,17 @@ def export_bundle_hdf5(
         geom_grp = f.create_group("geometry")
         _write_float_dataset(
             geom_grp, "pixel_area_cm2",
-            getattr(bundle.geometry, "pixel_area_cm2", None),
+            pixel_area_data,
             units="cm^2", missing=missing, dtype=np.float64, **compress_kwargs,
         )
         _write_float_dataset(
             geom_grp, "x_coordinates_mm",
-            getattr(bundle.geometry, "x_coordinates_mm", None),
+            x_coords,
             units="mm", missing=missing, dtype=np.float64, **compress_kwargs,
         )
         _write_float_dataset(
             geom_grp, "y_coordinates_mm",
-            getattr(bundle.geometry, "y_coordinates_mm", None),
+            y_coords,
             units="mm", missing=missing, dtype=np.float64, **compress_kwargs,
         )
 

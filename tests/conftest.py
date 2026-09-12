@@ -9,7 +9,7 @@ from pathlib import Path
 
 import pytest
 
-from tests.synthetic_data.generators import (
+from synthetic_data.generators import (
     make_empty_pr_archive,
     make_hologic_archive,
     make_parametric_map,
@@ -40,7 +40,7 @@ def hologic_archive_ds():
 def hologic_archive_padded_ds():
     """Archive dataset where declared P length = actual - 1 (DICOM odd-length padding).
 
-    The length mismatch is within the ±1 tolerance and must NOT trigger a warning.
+    The length mismatch is within the +/-1 tolerance and must NOT trigger a warning.
     """
     return make_hologic_archive(
         p_data=b"FAKE_P_FILE_CONTENT",
@@ -80,7 +80,7 @@ def parametric_map_ds():
 
 @pytest.fixture
 def parametric_map_no_rwvm_ds():
-    """Parametric Map that lacks both RWVM and float pixel data — NOT_ELIGIBLE."""
+    """Parametric Map that lacks both RWVM and float pixel data -- NOT_ELIGIBLE."""
     return make_parametric_map(include_rwvm=False, include_float_pixels=False)
 
 

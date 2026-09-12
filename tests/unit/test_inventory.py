@@ -9,16 +9,13 @@ from pathlib import Path
 import pytest
 
 from hologic_dxa.dicom.inventory import build_inventory, sha256_file
-from tests.synthetic_data.generators import (
+from synthetic_data.generators import (
     make_hologic_archive,
     make_secondary_capture,
     save_to_tmpdir,
 )
 
-# ---------------------------------------------------------------------------
 # PHI field names that must never appear in any inventory output
-# ---------------------------------------------------------------------------
-
 _PHI_KEYS = {
     "PatientName",
     "PatientID",
@@ -36,7 +33,7 @@ _PHI_KEYS = {
 
 
 def _phi_keys_in_dict(d: dict) -> set[str]:
-    """Recursively collect any PHI key names found in *d*."""
+    """Recursively collect any PHI key names found in d."""
     found: set[str] = set()
     for k, v in d.items():
         if k in _PHI_KEYS:
@@ -56,7 +53,7 @@ def _phi_keys_in_dict(d: dict) -> set[str]:
 
 class TestSha256File:
     def test_sha256_reproducible(self, tmp_path):
-        """Same file content → identical SHA-256 digest on two calls."""
+        """Same file content produces identical SHA-256 digest on two calls."""
         test_file = tmp_path / "data.bin"
         test_file.write_bytes(b"reproducible content " * 1000)
         hash1 = sha256_file(test_file)
@@ -72,7 +69,7 @@ class TestSha256File:
         assert all(c in "0123456789abcdef" for c in digest)
 
     def test_sha256_different_for_different_content(self, tmp_path):
-        """Different content → different SHA-256 digest."""
+        """Different content produces different SHA-256 digest."""
         file_a = tmp_path / "a.bin"
         file_b = tmp_path / "b.bin"
         file_a.write_bytes(b"content A")
@@ -80,16 +77,15 @@ class TestSha256File:
         assert sha256_file(file_a) != sha256_file(file_b)
 
     def test_sha256_empty_file(self, tmp_path):
-        """Empty file → well-known SHA-256 of empty string."""
+        """Empty file produces the well-known SHA-256 of empty string."""
         empty_file = tmp_path / "empty.bin"
         empty_file.write_bytes(b"")
-        # SHA-256 of empty string is a known constant
         expected = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
         assert sha256_file(empty_file) == expected
 
 
 # ---------------------------------------------------------------------------
-# build_inventory — PHI absence
+# build_inventory -- PHI absence
 # ---------------------------------------------------------------------------
 
 class TestInventoryNoPHI:
@@ -116,12 +112,12 @@ class TestInventoryNoPHI:
 
 
 # ---------------------------------------------------------------------------
-# build_inventory — non-DICOM file handling
+# build_inventory -- non-DICOM file handling
 # ---------------------------------------------------------------------------
 
 class TestNonDicomFile:
     def test_non_dicom_file_recorded(self, tmp_path):
-        """Plain text file → is_dicom=False, parse_error describes the issue."""
+        """Plain text file produces is_dicom=False with a parse_error message."""
         txt_file = tmp_path / "notes.txt"
         txt_file.write_text("not a dicom file\n", encoding="utf-8")
 
@@ -144,18 +140,17 @@ class TestNonDicomFile:
         txt_file = tmp_path / "notes.txt"
         txt_file.write_text("content", encoding="utf-8")
         records = build_inventory(tmp_path)
-        # relative path should not start with the tmp_path prefix
         assert not records[0].file_path.startswith(str(tmp_path))
         assert "notes.txt" in records[0].file_path
 
 
 # ---------------------------------------------------------------------------
-# build_inventory — DICOM classification
+# build_inventory -- DICOM classification
 # ---------------------------------------------------------------------------
 
 class TestInventoryDicomClassification:
     def test_secondary_capture_classified(self, tmp_path):
-        """Secondary Capture DICOM → classified as 'Secondary Capture'."""
+        """Secondary Capture DICOM is classified as 'Secondary Capture'."""
         save_to_tmpdir(make_secondary_capture(), tmp_path, "sc.dcm")
         records = build_inventory(tmp_path)
         dicom_records = [r for r in records if r.is_dicom]
@@ -166,14 +161,14 @@ class TestInventoryDicomClassification:
         )
 
     def test_secondary_capture_not_eligible(self, tmp_path):
-        """Secondary Capture → quantitative_eligibility = 'not_eligible'."""
+        """Secondary Capture produces quantitative_eligibility = 'not_eligible'."""
         save_to_tmpdir(make_secondary_capture(), tmp_path, "sc.dcm")
         records = build_inventory(tmp_path)
         dicom_records = [r for r in records if r.is_dicom]
         assert dicom_records[0].quantitative_eligibility == "not_eligible"
 
     def test_hologic_archive_classified(self, tmp_path):
-        """Hologic archive (P/R present) → classified as 'Hologic Archive (P/R data)'."""
+        """Hologic archive (P/R present) is classified as 'Hologic Archive (P/R data)'."""
         save_to_tmpdir(make_hologic_archive(), tmp_path, "archive.dcm")
         records = build_inventory(tmp_path)
         dicom_records = [r for r in records if r.is_dicom]
@@ -184,14 +179,14 @@ class TestInventoryDicomClassification:
         )
 
     def test_hologic_archive_pr_diagnosis(self, tmp_path):
-        """Hologic archive → pr_diagnosis = 'PR_PRESENT'."""
+        """Hologic archive produces pr_diagnosis = 'PR_PRESENT'."""
         save_to_tmpdir(make_hologic_archive(), tmp_path, "archive.dcm")
         records = build_inventory(tmp_path)
         dicom_records = [r for r in records if r.is_dicom]
         assert dicom_records[0].pr_diagnosis == "PR_PRESENT"
 
     def test_hologic_archive_presence_flag(self, tmp_path):
-        """Hologic archive → presence_of_hologic_pr_tags = True."""
+        """Hologic archive sets presence_of_hologic_pr_tags = True."""
         save_to_tmpdir(make_hologic_archive(), tmp_path, "archive.dcm")
         records = build_inventory(tmp_path)
         dicom_records = [r for r in records if r.is_dicom]
@@ -214,7 +209,7 @@ class TestInventoryDicomClassification:
 
 
 # ---------------------------------------------------------------------------
-# build_inventory — mixed directory
+# build_inventory -- mixed directory
 # ---------------------------------------------------------------------------
 
 class TestInventoryMixedDirectory:
@@ -232,5 +227,5 @@ class TestInventoryMixedDirectory:
         """All records (DICOM and non-DICOM) must have a non-empty SHA-256."""
         records = build_inventory(tmp_inventory_dir)
         for record in records:
-            if record.sha256 != "":  # empty only when IO error computing hash
+            if record.sha256 != "":  # empty only on IO error
                 assert len(record.sha256) == 64

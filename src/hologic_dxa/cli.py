@@ -78,21 +78,16 @@ def extract_pr(
 ) -> None:
     """Extract Hologic P and R files from DICOM archives."""
     configure_logging(level=log_level)
-    try:
-        from hologic_dxa.dicom.pr_extractor import extract_pr_files
-    except ImportError:
-        log.error(
-            "module_not_available",
-            module="hologic_dxa.dicom.pr_extractor",
-            reason="not_yet_implemented",
-        )
-        console.print(
-            "[red]The PR extractor module is not yet available in this installation.[/red]\n"
-            "This feature requires the Hologic SDK or a compatible P/R extraction back-end."
-        )
+    from hologic_dxa.dicom.extract_pr import extract_pr_from_path
+
+    if not path.exists():
+        log.error("path_not_found", path=str(path))
+        console.print(f"[red]Path not found: {path}[/red]")
         raise typer.Exit(code=1)
 
-    extract_pr_files(path, output)
+    output = Path(output)
+    output.mkdir(parents=True, exist_ok=True)
+    extract_pr_from_path(path, output)
     console.print(f"[green]P/R files written to {output}.[/green]")
 
 
@@ -107,18 +102,14 @@ def describe_pr(
 ) -> None:
     """Forensic description of extracted P/R files (size, entropy, magic bytes)."""
     configure_logging(level=log_level)
-    try:
-        from hologic_dxa.dicom.pr_extractor import describe_pr_manifest
-    except ImportError:
-        log.error(
-            "module_not_available",
-            module="hologic_dxa.dicom.pr_extractor",
-            reason="not_yet_implemented",
-        )
-        console.print("[red]The PR extractor module is not yet available.[/red]")
+    from hologic_dxa.dicom.extract_pr import describe_pr
+
+    if not manifest.exists():
+        log.error("manifest_not_found", path=str(manifest))
+        console.print(f"[red]File not found: {manifest}[/red]")
         raise typer.Exit(code=1)
 
-    describe_pr_manifest(manifest)
+    describe_pr(manifest)
 
 
 # ---------------------------------------------------------------------------
@@ -133,19 +124,23 @@ def parse_sr(
 ) -> None:
     """Parse Hologic APEX Structured Report DICOMs."""
     configure_logging(level=log_level)
-    try:
-        from hologic_dxa.dicom.sr_parser import parse_sr_directory
-    except ImportError:
-        log.error(
-            "module_not_available",
-            module="hologic_dxa.dicom.sr_parser",
-            reason="not_yet_implemented",
-        )
-        console.print("[red]The SR parser module is not yet available.[/red]")
+    import json as _json
+    from hologic_dxa.dicom.structured_report import load_sr_directory, sr_to_dataframe
+
+    if not path.exists():
+        log.error("path_not_found", path=str(path))
+        console.print(f"[red]Path not found: {path}[/red]")
         raise typer.Exit(code=1)
 
-    parse_sr_directory(path, output)
-    console.print(f"[green]SR results written to {output}.[/green]")
+    sr_records = load_sr_directory(path)
+    output = Path(output)
+    output.parent.mkdir(parents=True, exist_ok=True)
+    output.write_text(
+        _json.dumps([r if isinstance(r, dict) else r.__dict__ for r in sr_records], indent=2,
+                    default=str),
+        encoding="utf-8",
+    )
+    console.print(f"[green]SR results written to {output} ({len(sr_records)} record(s)).[/green]")
 
 
 # ---------------------------------------------------------------------------
@@ -188,19 +183,25 @@ def import_maps(
 ) -> None:
     """Import pre-calibrated quantitative arrays."""
     configure_logging(level=log_level)
-    try:
-        from hologic_dxa.maps.importer import import_map_arrays
-    except ImportError:
-        log.error(
-            "module_not_available",
-            module="hologic_dxa.maps.importer",
-            reason="not_yet_implemented",
-        )
-        console.print("[red]The map importer module is not yet available.[/red]")
+    from hologic_dxa.providers.exported_arrays import ExportedArraysProvider
+
+    if not path.exists():
+        log.error("path_not_found", path=str(path))
+        console.print(f"[red]Path not found: {path}[/red]")
         raise typer.Exit(code=1)
 
-    import_map_arrays(path, output)
-    console.print(f"[green]Bundle exported to {output}.[/green]")
+    provider = ExportedArraysProvider()
+    if not provider.can_read(path):
+        console.print(
+            f"[red]Directory '{path}' does not match the expected exported-arrays layout.\n"
+            "Required files: fat.npy (or fat.csv), lean.npy, bmc.npy, metadata.json.[/red]"
+        )
+        raise typer.Exit(code=1)
+
+    bundle = provider.load(path)
+    output = Path(output)
+    _write_simple_bundle_hdf5(bundle, output)
+    console.print(f"[green]Bundle written to {output}.[/green]")
 
 
 # ---------------------------------------------------------------------------
@@ -495,37 +496,168 @@ def _module_available(module: str) -> bool:
 def _load_bundle(path: Path) -> object:
     """Load a QuantitativeMapBundle from an HDF5 file.
 
-    Delegates to ``hologic_dxa.models`` when available; otherwise raises a
-    descriptive error so the user knows what is missing.
+    Returns a lightweight namespace populated with numpy arrays read from the
+    standard HDF5 structure written by :func:`_write_simple_bundle_hdf5` or
+    :func:`export_bundle_hdf5`.
     """
-    try:
-        from hologic_dxa.models import QuantitativeMapBundle
-    except ImportError as exc:
-        log.error("models_module_missing", error=str(exc))
-        console.print(
-            "[red]hologic_dxa.models is not available. "
-            "The models module must be implemented before bundles can be loaded.[/red]"
-        )
-        raise typer.Exit(code=1) from exc
+    import h5py
+    import types
 
-    if not Path(path).exists():
+    path = Path(path)
+    if not path.exists():
         log.error("bundle_not_found", path=str(path))
         console.print(f"[red]Bundle file not found: {path}[/red]")
         raise typer.Exit(code=1)
 
     try:
-        return QuantitativeMapBundle.from_hdf5(Path(path))
-    except AttributeError:
-        # Fallback: attempt a generic load method
-        try:
-            return QuantitativeMapBundle.load(Path(path))
-        except AttributeError as exc:
-            log.error("bundle_load_method_missing", error=str(exc))
-            console.print(
-                "[red]QuantitativeMapBundle has no from_hdf5() or load() method. "
-                "Implement one of these class methods in hologic_dxa.models.[/red]"
+        with h5py.File(path, "r") as f:
+            bundle = types.SimpleNamespace()
+
+            # Maps: fat, lean, bmc, total — each exposed as .values
+            maps_ns = types.SimpleNamespace()
+            for component in ("fat", "lean", "bmc", "total"):
+                ds_name = f"maps/{component}_areal_density_g_cm2"
+                arr = f[ds_name][:] if ds_name in f else None
+                qmap_ns = types.SimpleNamespace(
+                    values=arr,
+                    pixel_area_cm2=None,
+                    x_coordinates_mm=None,
+                    y_coordinates_mm=None,
+                )
+                setattr(maps_ns, f"{component}_areal_density_g_cm2", arr)
+                setattr(bundle, component, qmap_ns if arr is not None else None)
+            bundle.maps = maps_ns
+
+            # Masks
+            masks_ns = types.SimpleNamespace(
+                body=f["masks/body"][:].astype(bool) if "masks/body" in f else None,
+                bone=f["masks/bone"][:].astype(bool) if "masks/bone" in f else None,
+                valid=f["masks/valid"][:].astype(bool) if "masks/valid" in f else None,
             )
-            raise typer.Exit(code=1) from exc
+            bundle.masks = masks_ns
+            bundle.body_mask = masks_ns.body
+            bundle.bone_mask = masks_ns.bone
+            bundle.valid_mask = (
+                masks_ns.valid if masks_ns.valid is not None else masks_ns.body
+            )
+            if bundle.valid_mask is None:
+                # Fall back: all pixels valid
+                first_arr = next(
+                    (
+                        getattr(bundle, c).values
+                        for c in ("fat", "lean", "bmc", "total")
+                        if getattr(bundle, c) is not None
+                    ),
+                    None,
+                )
+                if first_arr is not None:
+                    bundle.valid_mask = np.ones(first_arr.shape, dtype=bool)
+
+            # Geometry
+            pixel_area = (
+                float(f["geometry/pixel_area_cm2"][...])
+                if "geometry/pixel_area_cm2" in f
+                else None
+            )
+            x_mm = f["geometry/x_coordinates_mm"][:] if "geometry/x_coordinates_mm" in f else None
+            y_mm = f["geometry/y_coordinates_mm"][:] if "geometry/y_coordinates_mm" in f else None
+
+            if x_mm is not None:
+                for c in ("fat", "lean", "bmc", "total"):
+                    qm = getattr(bundle, c)
+                    if qm is not None:
+                        qm.x_coordinates_mm = x_mm
+                        qm.y_coordinates_mm = y_mm
+                        qm.pixel_area_cm2 = pixel_area
+
+            geom_ns = types.SimpleNamespace()
+            geom_ns.pixel_area_cm2 = pixel_area
+
+            def _pixel_area_cm2_scalar() -> float:
+                if pixel_area is None:
+                    raise ValueError(
+                        "pixel_area_cm2 is missing from the HDF5 bundle geometry group."
+                    )
+                return pixel_area
+
+            geom_ns.pixel_area_cm2_scalar = _pixel_area_cm2_scalar  # type: ignore[attr-defined]
+            # Reconstruct geometry shape from arrays
+            if x_mm is not None:
+                geom_ns.rows = x_mm.shape[0]
+                geom_ns.columns = x_mm.shape[1]
+                geom_ns.pixel_spacing_mm = (1.0, 1.0)  # unknown; coordinates already stored
+                geom_ns.origin_mm = (float(x_mm[0, 0]), float(y_mm[0, 0]))  # type: ignore[index]
+            bundle.geometry = geom_ns
+            bundle.x_coordinates_mm = x_mm
+            bundle.y_coordinates_mm = y_mm
+
+            # Metadata / provenance
+            meta_attrs = dict(f["metadata"].attrs) if "metadata" in f else {}
+            bundle.metadata = meta_attrs
+            bundle.provenance = None
+
+    except OSError as exc:
+        log.error("bundle_read_error", path=str(path), error=str(exc))
+        console.print(f"[red]Cannot read bundle file '{path}': {exc}[/red]")
+        raise typer.Exit(code=1) from exc
+
+    return bundle
+
+
+def _write_simple_bundle_hdf5(bundle: object, output_path: Path) -> None:
+    """Write a ``maps.bundle.QuantitativeMapBundle`` to HDF5.
+
+    Produces the same structure as :func:`export_bundle_hdf5` so that
+    downstream commands can read it back via :func:`_load_bundle`.
+    """
+    import h5py
+    import numpy as _np
+
+    output_path = Path(output_path)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+
+    fat: _np.ndarray = getattr(bundle, "fat")
+    lean: _np.ndarray = getattr(bundle, "lean")
+    bmc: _np.ndarray = getattr(bundle, "bmc")
+    total: _np.ndarray = fat + lean + bmc
+    valid_mask: _np.ndarray = getattr(bundle, "valid_mask")
+    pixel_area: float = getattr(bundle, "pixel_area_cm2")
+
+    with h5py.File(output_path, "w") as f:
+        maps_grp = f.create_group("maps")
+        for name, arr in (
+            ("fat_areal_density_g_cm2", fat),
+            ("lean_areal_density_g_cm2", lean),
+            ("bmc_areal_density_g_cm2", bmc),
+            ("total_areal_density_g_cm2", total),
+        ):
+            ds = maps_grp.create_dataset(
+                name, data=arr.astype(_np.float32), compression="gzip", compression_opts=4
+            )
+            ds.attrs["units"] = "g/cm^2"
+
+        masks_grp = f.create_group("masks")
+        ds_valid = masks_grp.create_dataset(
+            "valid", data=valid_mask.astype(_np.uint8), compression="gzip", compression_opts=4
+        )
+        ds_valid.attrs["units"] = "boolean (0=False, 1=True)"
+
+        geom_grp = f.create_group("geometry")
+        ds_area = geom_grp.create_dataset("pixel_area_cm2", data=_np.float64(pixel_area))
+        ds_area.attrs["units"] = "cm^2"
+
+        meta_grp = f.create_group("metadata")
+        meta_grp.attrs["source_sop_instance_uid"] = str(
+            getattr(bundle, "source_sop_instance_uid", "")
+        )
+        meta_grp.attrs["provider_name"] = str(getattr(bundle, "provider_name", ""))
+        meta_grp.attrs["already_geometry_corrected"] = bool(
+            getattr(bundle, "already_geometry_corrected", False)
+        )
+
+        f.create_group("provenance")
+
+    log.info("simple_bundle_hdf5_written", path=str(output_path))
 
 
 def _load_dataframe(path: Path, label: str) -> object:

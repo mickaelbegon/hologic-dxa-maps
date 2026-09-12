@@ -5,7 +5,7 @@ from __future__ import annotations
 import pytest
 
 from hologic_dxa.dicom.classify import DicomClass, QuantitativeEligibility, classify
-from tests.synthetic_data.generators import (
+from synthetic_data.generators import (
     make_hologic_archive,
     make_parametric_map,
     make_secondary_capture,
@@ -13,18 +13,14 @@ from tests.synthetic_data.generators import (
 )
 
 
-# ---------------------------------------------------------------------------
-# Secondary Capture
-# ---------------------------------------------------------------------------
-
 class TestSecondaryCapture:
     def test_secondary_capture_not_eligible(self, secondary_capture_ds):
-        """Secondary Capture → NOT_ELIGIBLE."""
+        """Secondary Capture produces NOT_ELIGIBLE."""
         result = classify(secondary_capture_ds)
         assert result.quantitative_eligibility == QuantitativeEligibility.NOT_ELIGIBLE
 
     def test_secondary_capture_class(self, secondary_capture_ds):
-        """Secondary Capture → DICOM class is SECONDARY_CAPTURE."""
+        """Secondary Capture DICOM class is SECONDARY_CAPTURE."""
         result = classify(secondary_capture_ds)
         assert result.dicom_class == DicomClass.SECONDARY_CAPTURE
 
@@ -39,7 +35,6 @@ class TestSecondaryCapture:
         """
         result = classify(secondary_capture_ds)
         diagnostic_lower = result.diagnostic.lower()
-        # The diagnostic must contain at least one of these prohibitive phrases
         prohibitive_keywords = ["must not", "cannot", "prohibited", "display-scaled"]
         has_prohibition = any(kw in diagnostic_lower for kw in prohibitive_keywords)
         assert has_prohibition, (
@@ -48,18 +43,14 @@ class TestSecondaryCapture:
         )
 
 
-# ---------------------------------------------------------------------------
-# Hologic Archive
-# ---------------------------------------------------------------------------
-
 class TestHologicArchive:
     def test_hologic_archive_classified_correctly(self, hologic_archive_ds):
-        """Archive with P/R data → HOLOGIC_ARCHIVE class."""
+        """Archive with P/R data produces HOLOGIC_ARCHIVE class."""
         result = classify(hologic_archive_ds)
         assert result.dicom_class == DicomClass.HOLOGIC_ARCHIVE
 
     def test_hologic_archive_requires_calibration(self, hologic_archive_ds):
-        """Archive → REQUIRES_CALIBRATION (cannot produce density without calibration)."""
+        """Archive produces REQUIRES_CALIBRATION (no density without calibration)."""
         result = classify(hologic_archive_ds)
         assert result.quantitative_eligibility == QuantitativeEligibility.REQUIRES_CALIBRATION
 
@@ -71,35 +62,31 @@ class TestHologicArchive:
         )
 
 
-# ---------------------------------------------------------------------------
-# Parametric Map
-# ---------------------------------------------------------------------------
-
 class TestParametricMap:
     def test_parametric_map_with_rwvm_eligible(self, parametric_map_ds):
-        """Parametric Map with RWVM and float pixels → ELIGIBLE."""
+        """Parametric Map with RWVM and float pixels produces ELIGIBLE."""
         result = classify(parametric_map_ds)
         assert result.quantitative_eligibility == QuantitativeEligibility.ELIGIBLE
 
     def test_parametric_map_dicom_class(self, parametric_map_ds):
-        """Parametric Map → DICOM class is PARAMETRIC_MAP."""
+        """Parametric Map DICOM class is PARAMETRIC_MAP."""
         result = classify(parametric_map_ds)
         assert result.dicom_class == DicomClass.PARAMETRIC_MAP
 
     def test_parametric_map_has_float_pixel_flag(self, parametric_map_ds):
-        """Parametric Map with FloatPixelData → has_float_pixel_data True."""
+        """Parametric Map with FloatPixelData sets has_float_pixel_data True."""
         result = classify(parametric_map_ds)
         assert result.has_float_pixel_data is True
 
     def test_parametric_map_has_rwvm_flag(self, parametric_map_ds):
-        """Parametric Map with RWVM → has_real_world_value_mapping True."""
+        """Parametric Map with RWVM sets has_real_world_value_mapping True."""
         result = classify(parametric_map_ds)
         assert result.has_real_world_value_mapping is True
 
     def test_parametric_map_without_rwvm_not_eligible(
         self, parametric_map_no_rwvm_ds
     ):
-        """Parametric Map missing both RWVM and float pixels → NOT_ELIGIBLE."""
+        """Parametric Map missing both RWVM and float pixels produces NOT_ELIGIBLE."""
         result = classify(parametric_map_no_rwvm_ds)
         assert result.quantitative_eligibility == QuantitativeEligibility.NOT_ELIGIBLE
 
@@ -111,37 +98,29 @@ class TestParametricMap:
         assert result.dicom_class == DicomClass.PARAMETRIC_MAP
 
     def test_parametric_map_with_only_rwvm_eligible(self):
-        """Parametric Map with RWVM but no float pixels → ELIGIBLE (RWVM is sufficient)."""
+        """Parametric Map with RWVM but no float pixels produces ELIGIBLE."""
         ds = make_parametric_map(include_rwvm=True, include_float_pixels=False)
         result = classify(ds)
         assert result.quantitative_eligibility == QuantitativeEligibility.ELIGIBLE
 
     def test_parametric_map_with_only_float_pixels_eligible(self):
-        """Parametric Map with float pixels but no RWVM → ELIGIBLE (float pixels suffice)."""
+        """Parametric Map with float pixels but no RWVM produces ELIGIBLE."""
         ds = make_parametric_map(include_rwvm=False, include_float_pixels=True)
         result = classify(ds)
         assert result.quantitative_eligibility == QuantitativeEligibility.ELIGIBLE
 
 
-# ---------------------------------------------------------------------------
-# Structured Report
-# ---------------------------------------------------------------------------
-
 class TestStructuredReport:
     def test_sr_eligible(self, structured_report_ds):
-        """SR → ELIGIBLE (may contain regional quantitative results)."""
+        """SR produces ELIGIBLE (may contain regional quantitative results)."""
         result = classify(structured_report_ds)
         assert result.quantitative_eligibility == QuantitativeEligibility.ELIGIBLE
 
     def test_sr_dicom_class(self, structured_report_ds):
-        """SR → DICOM class is STRUCTURED_REPORT."""
+        """SR DICOM class is STRUCTURED_REPORT."""
         result = classify(structured_report_ds)
         assert result.dicom_class == DicomClass.STRUCTURED_REPORT
 
-
-# ---------------------------------------------------------------------------
-# Cross-cutting
-# ---------------------------------------------------------------------------
 
 class TestClassifyReturnsAllFields:
     def test_result_has_sop_class_uid(self, secondary_capture_ds):
