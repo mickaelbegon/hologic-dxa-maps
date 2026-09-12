@@ -1,0 +1,313 @@
+# Hologic APEX DICOM concept code mapping
+#
+# Format:  list of entries, each with:
+#   code_value            DICOM CodeValue (string)
+#   coding_scheme         CodingSchemeDesignator
+#   code_meaning          Human-readable label from DICOM standard or Hologic docs
+#   canonical_name        Snake-case identifier for use inside this pipeline
+#   tissue_component      fat | lean | bmc | total | pct_fat | bmd | area | other
+#   anatomic_region       whole_body | head | trunk | arms | legs | left | right |
+#                         arm_left | arm_right | leg_left | leg_right | spine |
+#                         femur | forearm | none
+#   confidence            high | medium | low
+#   note                  (optional) explanation for low-confidence entries
+#
+# Sources consulted:
+#   DICOM PS3.16 (Content Mapping Resource) CID 7181, 7182, 7460, 7464
+#   SNOMED CT body structure hierarchy
+#   LOINC 2.77 DXA panel codes
+#   Hologic APEX SR examples (empirical observation — no official SDK docs)
+#
+# ─────────────────────────────────────────────────────────────────────────────
+# Body-composition quantities
+# ─────────────────────────────────────────────────────────────────────────────
+
+- code_value: "122199"
+  coding_scheme: DCM
+  code_meaning: Fat Mass
+  canonical_name: fat_mass
+  tissue_component: fat
+  anatomic_region: none
+  confidence: high
+
+- code_value: "122200"
+  coding_scheme: DCM
+  code_meaning: Lean Mass
+  canonical_name: lean_mass
+  tissue_component: lean
+  anatomic_region: none
+  confidence: high
+
+- code_value: "122201"
+  coding_scheme: DCM
+  code_meaning: Bone Mineral Content
+  canonical_name: bmc
+  tissue_component: bmc
+  anatomic_region: none
+  confidence: high
+
+- code_value: "122202"
+  coding_scheme: DCM
+  code_meaning: Total Mass
+  canonical_name: total_mass
+  tissue_component: total
+  anatomic_region: none
+  confidence: high
+
+- code_value: "122204"
+  coding_scheme: DCM
+  code_meaning: Fat Percentage
+  canonical_name: fat_percent
+  tissue_component: pct_fat
+  anatomic_region: none
+  confidence: high
+
+- code_value: "122206"
+  coding_scheme: DCM
+  code_meaning: Lean + BMC Mass
+  canonical_name: lean_plus_bmc
+  tissue_component: other
+  anatomic_region: none
+  confidence: medium
+  note: >
+    Some Hologic SR exports include lean+BMC as a combined value.
+    Verify against actual SR content items.
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Bone Mineral Density
+# ─────────────────────────────────────────────────────────────────────────────
+
+- code_value: "122203"
+  coding_scheme: DCM
+  code_meaning: Bone Mineral Density
+  canonical_name: bmd
+  tissue_component: bmd
+  anatomic_region: none
+  confidence: high
+
+- code_value: "38265-5"
+  coding_scheme: LN
+  code_meaning: DXA BMD - Spine L1-L4
+  canonical_name: bmd_spine_l1l4
+  tissue_component: bmd
+  anatomic_region: spine
+  confidence: high
+
+- code_value: "38267-1"
+  coding_scheme: LN
+  code_meaning: DXA BMD - Femur neck
+  canonical_name: bmd_femur_neck
+  tissue_component: bmd
+  anatomic_region: femur
+  confidence: high
+
+- code_value: "38261-4"
+  coding_scheme: LN
+  code_meaning: DXA BMD - Total hip
+  canonical_name: bmd_total_hip
+  tissue_component: bmd
+  anatomic_region: femur
+  confidence: high
+
+- code_value: "80948-3"
+  coding_scheme: LN
+  code_meaning: DXA BMD - Forearm (1/3 radius)
+  canonical_name: bmd_forearm_radius
+  tissue_component: bmd
+  anatomic_region: forearm
+  confidence: medium
+  note: LOINC code verified; mapping to Hologic SR item is empirical.
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Area
+# ─────────────────────────────────────────────────────────────────────────────
+
+- code_value: "122205"
+  coding_scheme: DCM
+  code_meaning: Bone Area
+  canonical_name: bone_area
+  tissue_component: area
+  anatomic_region: none
+  confidence: high
+
+- code_value: "131196009"
+  coding_scheme: SCT
+  code_meaning: Area of bone (observable entity)
+  canonical_name: bone_area_snomed
+  tissue_component: area
+  anatomic_region: none
+  confidence: medium
+  note: SNOMED alternative; check whether APEX uses DCM 122205 or this code.
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Anatomic regions — whole body and sub-regions
+# ─────────────────────────────────────────────────────────────────────────────
+
+- code_value: "38266-3"
+  coding_scheme: LN
+  code_meaning: DXA Whole Body
+  canonical_name: whole_body
+  tissue_component: other
+  anatomic_region: whole_body
+  confidence: high
+
+- code_value: "69536005"
+  coding_scheme: SCT
+  code_meaning: Head (body structure)
+  canonical_name: head
+  tissue_component: other
+  anatomic_region: head
+  confidence: high
+
+- code_value: "51185008"
+  coding_scheme: SCT
+  code_meaning: Thorax (body structure)
+  canonical_name: trunk
+  tissue_component: other
+  anatomic_region: trunk
+  confidence: medium
+  note: >
+    Hologic APEX "trunk" region may use a combined chest+abdomen code.
+    Verify that this SNOMED code matches the actual SR AnatomicRegionSequence.
+
+- code_value: "40223002"
+  coding_scheme: SCT
+  code_meaning: Upper limb (body structure)
+  canonical_name: arms
+  tissue_component: other
+  anatomic_region: arms
+  confidence: medium
+  note: Used when APEX reports both arms combined; check laterality separately.
+
+- code_value: "61685007"
+  coding_scheme: SCT
+  code_meaning: Lower limb (body structure)
+  canonical_name: legs
+  tissue_component: other
+  anatomic_region: legs
+  confidence: medium
+  note: Used when APEX reports both legs combined; check laterality separately.
+
+- code_value: "368209003"
+  coding_scheme: SCT
+  code_meaning: Right arm (body structure)
+  canonical_name: arm_right
+  tissue_component: other
+  anatomic_region: arm_right
+  confidence: high
+
+- code_value: "368208006"
+  coding_scheme: SCT
+  code_meaning: Left arm (body structure)
+  canonical_name: arm_left
+  tissue_component: other
+  anatomic_region: arm_left
+  confidence: high
+
+- code_value: "368209003"
+  coding_scheme: SCT
+  code_meaning: Right leg (body structure)
+  canonical_name: leg_right
+  tissue_component: other
+  anatomic_region: leg_right
+  confidence: low
+  note: >
+    SNOMED 368209003 is "Right arm".  Hologic may use a different code for
+    right leg.  This entry is a placeholder — verify against actual SR files.
+
+- code_value: "368208006"
+  coding_scheme: SCT
+  code_meaning: Left leg (body structure)
+  canonical_name: leg_left
+  tissue_component: other
+  anatomic_region: leg_left
+  confidence: low
+  note: >
+    Same caveat as leg_right: SNOMED code here needs verification.
+
+- code_value: "182210002"
+  coding_scheme: SCT
+  code_meaning: Entire right leg (body structure)
+  canonical_name: leg_right_snomed
+  tissue_component: other
+  anatomic_region: leg_right
+  confidence: medium
+  note: Alternative SNOMED candidate for right leg; verify against real SR.
+
+- code_value: "182209007"
+  coding_scheme: SCT
+  code_meaning: Entire left leg (body structure)
+  canonical_name: leg_left_snomed
+  tissue_component: other
+  anatomic_region: leg_left
+  confidence: medium
+  note: Alternative SNOMED candidate for left leg; verify against real SR.
+
+- code_value: "416949008"
+  coding_scheme: SCT
+  code_meaning: Lumbar spine (body structure)
+  canonical_name: lumbar_spine
+  tissue_component: other
+  anatomic_region: spine
+  confidence: high
+
+- code_value: "71341001"
+  coding_scheme: SCT
+  code_meaning: Bone structure of femur (body structure)
+  canonical_name: femur
+  tissue_component: other
+  anatomic_region: femur
+  confidence: high
+
+- code_value: "46633002"
+  coding_scheme: SCT
+  code_meaning: Entire forearm (body structure)
+  canonical_name: forearm
+  tissue_component: other
+  anatomic_region: forearm
+  confidence: medium
+  note: Hologic forearm DXA may report radius 1/3, ultra-distal, or total.
+
+# ─────────────────────────────────────────────────────────────────────────────
+# T-score / Z-score (scalar results reported alongside BMD)
+# ─────────────────────────────────────────────────────────────────────────────
+
+- code_value: "38263-0"
+  coding_scheme: LN
+  code_meaning: DXA T-score
+  canonical_name: t_score
+  tissue_component: other
+  anatomic_region: none
+  confidence: high
+
+- code_value: "38264-8"
+  coding_scheme: LN
+  code_meaning: DXA Z-score
+  canonical_name: z_score
+  tissue_component: other
+  anatomic_region: none
+  confidence: high
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Android / Gynoid regions (Hologic-specific body composition sub-regions)
+# ─────────────────────────────────────────────────────────────────────────────
+
+- code_value: "122207"
+  coding_scheme: DCM
+  code_meaning: Android Region
+  canonical_name: android_region
+  tissue_component: other
+  anatomic_region: trunk
+  confidence: low
+  note: >
+    DCM 122207 is hypothetical.  Hologic APEX "android/gynoid" regions may
+    use private or proprietary codes.  Requires confirmation from real SR.
+
+- code_value: "122208"
+  coding_scheme: DCM
+  code_meaning: Gynoid Region
+  canonical_name: gynoid_region
+  tissue_component: other
+  anatomic_region: trunk
+  confidence: low
+  note: Same caveat as android_region.

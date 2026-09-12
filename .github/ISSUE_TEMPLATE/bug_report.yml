@@ -1,0 +1,49 @@
+name: Bug Report
+description: Report a bug in the pipeline
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        **Important:** Do not include any patient data, real DICOM files, or personal information in this report.
+        Use synthetic or anonymized data only.
+
+  - type: textarea
+    id: description
+    attributes:
+      label: Bug description
+      description: What happened? What did you expect?
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Steps to reproduce
+      description: Minimum example using synthetic data
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: hologic-dxa version
+      placeholder: "e.g. 0.1.0"
+    validations:
+      required: true
+
+  - type: input
+    id: python
+    attributes:
+      label: Python version
+      placeholder: "e.g. 3.11.9"
+    validations:
+      required: true
+
+  - type: input
+    id: os
+    attributes:
+      label: Operating system
+      placeholder: "e.g. Windows 11, Ubuntu 22.04"
+    validations:
+      required: true

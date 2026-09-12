@@ -1,0 +1,26 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite it as below."
+type: software
+title: "hologic-dxa-maps: Reproducible pipeline for Hologic DXA quantitative maps"
+version: "0.1.0"
+date-released: "2024-01-01"
+license: MIT
+repository-code: "https://github.com/mickaelbegon/hologic-dxa-maps"
+authors:
+  - family-names: Begon
+    given-names: Mickael
+    orcid: "https://orcid.org/0000-0002-7854-4986"
+    affiliation: "Université de Montréal"
+keywords:
+  - DXA
+  - DICOM
+  - Hologic
+  - quantitative imaging
+  - body composition
+  - biomechanics
+  - acrobatics
+abstract: >
+  A Python pipeline for extracting and reconstructing pixel-level quantitative
+  maps of fat, lean tissue, and bone mineral content from Hologic DXA DICOM
+  files. Designed for reproducible research in biomechanics and sports science,
+  with strict separation between measured, calibrated, and experimental data.

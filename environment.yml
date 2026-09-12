@@ -1,0 +1,20 @@
+name: hologic-dxa
+channels:
+  - conda-forge
+  - defaults
+dependencies:
+  - python=3.11
+  - pip
+  # Core scientific stack — prefer conda builds for binary extensions
+  - numpy>=1.26
+  - scipy>=1.13
+  - pandas>=2.2
+  - matplotlib>=3.8
+  - h5py>=3.10
+  - zarr>=2.18
+  - pyyaml>=6.0
+  # Dev tools
+  - pre-commit>=3.7
+  - git
+  - pip:
+      - hologic-dxa[dev]
