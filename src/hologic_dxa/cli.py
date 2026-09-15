@@ -407,6 +407,110 @@ def extract_bmd(
 
 
 # ---------------------------------------------------------------------------
+# compare_bmd
+# ---------------------------------------------------------------------------
+
+@app.command()
+def compare_bmd(
+    scan: Annotated[Path, typer.Argument(help="DXA scan DICOM (contains tag 0019,1000).")],
+    sr: Annotated[Path, typer.Argument(help="Companion Structured Report DICOM.")],
+    output: _OutputOpt = Path("output/bmd_comparison.csv"),
+    format: Annotated[
+        str, typer.Option("--format", "-f", help="Output format: csv or json.")
+    ] = "csv",
+    log_level: Annotated[str, typer.Option("--log-level")] = "INFO",
+) -> None:
+    """Cross-validate BMD/BCA from APEX XML (0019,1000) against the SR DICOM.
+
+    Reads the scan DICOM for XML results and the companion SR DICOM for coded
+    measurements, normalises region names, joins the two sources, and writes a
+    comparison table (abs_diff, rel_diff_pct per region × quantity).
+    """
+    configure_logging(level=log_level)
+    import pydicom
+    from hologic_dxa.dicom.hologic_xml import parse_apex_xml
+    from hologic_dxa.dicom.structured_report import parse_structured_report
+    from hologic_dxa.dicom.bmd_comparison import compare_apex_xml_vs_sr, comparison_summary
+
+    for p, label in [(scan, "scan"), (sr, "SR")]:
+        if not p.exists():
+            log.error("path_not_found", path=str(p), label=label)
+            console.print(f"[red]Path not found ({label}): {p}[/red]")
+            raise typer.Exit(code=1)
+
+    if format not in ("csv", "json"):
+        console.print(f"[red]Unknown format '{format}'. Use 'csv' or 'json'.[/red]")
+        raise typer.Exit(code=1)
+
+    ds_scan = pydicom.dcmread(str(scan), force=True)
+    ds_sr   = pydicom.dcmread(str(sr),   force=True)
+
+    xml_results  = parse_apex_xml(ds_scan)
+    sr_measurements = parse_structured_report(ds_sr)
+
+    if not xml_results.measurements:
+        console.print(
+            f"[yellow]No APEX XML results found in {scan.name}. "
+            "Check that the file contains tag (0019,1000).[/yellow]"
+        )
+        raise typer.Exit(code=1)
+
+    if not sr_measurements:
+        console.print(
+            f"[yellow]No SR measurements found in {sr.name}. "
+            "Check that the file is a Hologic APEX Structured Report.[/yellow]"
+        )
+        raise typer.Exit(code=1)
+
+    result = compare_apex_xml_vs_sr(xml_results, sr_measurements)
+
+    output = Path(output)
+    output.parent.mkdir(parents=True, exist_ok=True)
+    if format == "csv":
+        result.df.to_csv(output, index=False)
+    else:
+        result.df.to_json(output, orient="records", indent=2)
+
+    # Print summary table
+    summary = comparison_summary(result)
+    if not summary.empty:
+        rich_table = Table(
+            title="Agreement summary (XML vs SR)",
+            show_header=True, header_style="bold cyan",
+        )
+        for col in summary.columns:
+            rich_table.add_column(col)
+        for _, row in summary.iterrows():
+            rich_table.add_row(*[
+                f"{v:.4f}" if isinstance(v, float) else str(v) for v in row
+            ])
+        console.print(rich_table)
+
+    # Warn on unmatched regions
+    if result.unmatched_xml_regions:
+        console.print(
+            f"[yellow]XML regions not matched in SR: "
+            f"{', '.join(result.unmatched_xml_regions)}[/yellow]"
+        )
+    if result.unmatched_sr_regions:
+        console.print(
+            f"[yellow]SR regions not matched in XML: "
+            f"{', '.join(result.unmatched_sr_regions)}[/yellow]"
+        )
+    if result.unmapped_sr_codes:
+        console.print(
+            f"[yellow]Unmapped SR concept codes: "
+            f"{result.unmapped_sr_codes}[/yellow]"
+        )
+
+    n_matched = result.df.dropna(subset=["xml_value", "sr_value"])
+    console.print(
+        f"[green]{len(n_matched)} matched (region, quantity) pairs. "
+        f"Comparison written to {output}.[/green]"
+    )
+
+
+# ---------------------------------------------------------------------------
 # doctor
 # ---------------------------------------------------------------------------
 
