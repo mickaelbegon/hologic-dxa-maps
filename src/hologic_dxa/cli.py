@@ -312,6 +312,101 @@ def export_hdf5(
 
 
 # ---------------------------------------------------------------------------
+# extract_bmd
+# ---------------------------------------------------------------------------
+
+@app.command()
+def extract_bmd(
+    path: _PathArg,
+    output: _OutputOpt = Path("output/bmd_results.csv"),
+    format: Annotated[
+        str, typer.Option("--format", "-f", help="Output format: csv or json.")
+    ] = "csv",
+    log_level: Annotated[str, typer.Option("--log-level")] = "INFO",
+) -> None:
+    """Extract BMD / body-composition results from Hologic APEX XML (tag 0019,1000).
+
+    Accepts a single DICOM file or a directory (scanned recursively for .dcm
+    files).  Writes a tidy CSV (or JSON) with one row per region per file and
+    prints a summary table to the terminal.
+    """
+    configure_logging(level=log_level)
+    import pydicom
+    import pandas as pd
+    from hologic_dxa.dicom.hologic_xml import parse_apex_xml, apex_results_to_dataframe
+
+    if not path.exists():
+        log.error("path_not_found", path=str(path))
+        console.print(f"[red]Path not found: {path}[/red]")
+        raise typer.Exit(code=1)
+
+    if format not in ("csv", "json"):
+        console.print(f"[red]Unknown format '{format}'. Use 'csv' or 'json'.[/red]")
+        raise typer.Exit(code=1)
+
+    dcm_paths: list[Path] = (
+        sorted(path.rglob("*.dcm")) if path.is_dir() else [path]
+    )
+    if not dcm_paths:
+        console.print(f"[yellow]No .dcm files found under {path}.[/yellow]")
+        raise typer.Exit(code=0)
+
+    all_frames: list[pd.DataFrame] = []
+    n_parsed = 0
+
+    for dcm_path in dcm_paths:
+        try:
+            ds = pydicom.dcmread(str(dcm_path), force=True)
+        except Exception as exc:  # noqa: BLE001
+            log.warning("dcm_read_failed", path=str(dcm_path), error=str(exc))
+            continue
+
+        results = parse_apex_xml(ds)
+        if not results.measurements:
+            log.debug("no_apex_xml", path=str(dcm_path))
+            continue
+
+        df = apex_results_to_dataframe(results)
+        df.insert(0, "source_file", dcm_path.name)
+        if results.scan_info.acf is not None:
+            df["acf"] = results.scan_info.acf
+        if results.scan_info.bcf is not None:
+            df["bcf"] = results.scan_info.bcf
+        all_frames.append(df)
+        n_parsed += 1
+
+    if not all_frames:
+        console.print(
+            "[yellow]No APEX XML tag (0019,1000) found in the supplied file(s).[/yellow]"
+        )
+        raise typer.Exit(code=0)
+
+    combined = pd.concat(all_frames, ignore_index=True)
+
+    # Write output
+    output = Path(output)
+    output.parent.mkdir(parents=True, exist_ok=True)
+    if format == "csv":
+        combined.to_csv(output, index=False)
+    else:
+        combined.to_json(output, orient="records", indent=2)
+
+    # Print rich summary table (first file only to keep terminal readable)
+    first = all_frames[0]
+    rich_table = Table(title="APEX BMD results (first file)", show_header=True, header_style="bold cyan")
+    for col in first.columns:
+        rich_table.add_column(col, overflow="fold")
+    for _, row in first.iterrows():
+        rich_table.add_row(*[str(v) if v is not None else "" for v in row])
+    console.print(rich_table)
+
+    console.print(
+        f"[green]{n_parsed} file(s) parsed, "
+        f"{len(combined)} region rows written to {output}.[/green]"
+    )
+
+
+# ---------------------------------------------------------------------------
 # doctor
 # ---------------------------------------------------------------------------
 
@@ -407,6 +502,11 @@ def _check_providers() -> None:
             "Standard DICOM PM objects are supported via pydicom/highdicom.",
         ),
         (
+            "APEX XML extraction (0019,1000)",
+            _module_available("hologic_dxa.dicom.hologic_xml"),
+            "Parse BMD / BCA results from Hologic private XML tag.",
+        ),
+        (
             "SR result extraction",
             _module_available("hologic_dxa.dicom.sr_parser"),
             "Parse regional results from Hologic APEX Structured Reports.",
@@ -441,14 +541,19 @@ def _check_features() -> None:
 
     blocked = [
         (
-            "P/R file extraction",
-            False,
-            "Requires pr_extractor module (not yet implemented).",
+            "APEX XML extraction (extract-bmd)",
+            True,
+            "Parses tag (0019,1000) from any Hologic DXA DICOM.",
         ),
         (
-            "SR parsing",
-            False,
-            "Requires sr_parser module (not yet implemented).",
+            "P/R file extraction (extract-pr)",
+            True,
+            "Extracts raw P/R binary files from DICOM private tags.",
+        ),
+        (
+            "SR parsing (parse-sr)",
+            True,
+            "Parses Hologic APEX Structured Reports.",
         ),
         (
             "Map import from array files",
@@ -464,6 +569,11 @@ def _check_features() -> None:
             "Hologic SDK calibration",
             False,
             "Requires proprietary Hologic SDK (not distributable).",
+        ),
+        (
+            "Bi-energy raw reconstruction",
+            False,
+            "Blocked: drum calibration algorithm proprietary (R file records 202/224).",
         ),
     ]
 
