@@ -515,6 +515,99 @@ def compare_bmd(
 # ---------------------------------------------------------------------------
 
 @app.command()
+def segment_profiles(
+    path: Annotated[Path, typer.Argument(help="Hologic whole-body DICOM file.")],
+    cor: Annotated[
+        Path, typer.Option("--cor", help="JSON {marker: [row, col]} of centres of rotation.")
+    ],
+    output_dir: Annotated[Path, typer.Option("--output-dir", "-o")] = Path("output"),
+    n_slices: Annotated[int, typer.Option("--n-slices", min=2, max=50)] = 10,
+    log_level: Annotated[str, typer.Option("--log-level")] = "INFO",
+) -> None:
+    """Density profiles per body segment (EXPERIMENTAL, empirical calibration).
+
+    Cuts each segment into slices perpendicular to its CoR-to-CoR axis and
+    writes ``segment_profiles.csv`` and ``segment_profiles.json`` (parameters and
+    provenance) into --output-dir.  File names never depend on DICOM tag values.
+    """
+    configure_logging(level=log_level)
+    import hashlib
+    import json
+
+    import pydicom
+
+    from hologic_dxa.segments import (
+        CALIBRATION_STATUS,
+        SliceGeometry,
+        TissueModel,
+        compute_segment_profiles,
+        load_cor_json,
+        load_whole_body_mu,
+        profiles_to_dataframe,
+    )
+
+    for label, p in (("DICOM", path), ("CoR JSON", cor)):
+        if not p.is_file():
+            console.print(f"[red]{label} file not found: {p}[/red]")
+            raise typer.Exit(code=1)
+
+    try:
+        ds = pydicom.dcmread(str(path), force=True)
+        mu = load_whole_body_mu(ds)
+        cor_px = load_cor_json(cor, grid_shape=mu.mu_h.shape)  # type: ignore[arg-type]
+    except ValueError as exc:
+        console.print(f"[red]{exc}[/red]")
+        raise typer.Exit(code=1) from exc
+
+    geometry = SliceGeometry(row_size_m=mu.row_size_m, col_size_m=mu.col_size_m)
+    model = TissueModel()
+    profiles = compute_segment_profiles(
+        mu.mu_h, mu.mu_l, cor_px, n_slices=n_slices, geometry=geometry, tissue_model=model
+    )
+    df = profiles_to_dataframe(profiles)
+    if df.empty:
+        console.print("[yellow]No valid slice produced; check the CoR file.[/yellow]")
+        raise typer.Exit(code=1)
+
+    output_dir.mkdir(parents=True, exist_ok=True)
+    df.to_csv(output_dir / "segment_profiles.csv", index=False)
+    meta = {
+        "calibration_status": CALIBRATION_STATUS,
+        "experimental": True,
+        "source_sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
+        "n_slices": n_slices,
+        "segments": [p.name for p in profiles],
+        "row_size_m": geometry.row_size_m,
+        "col_size_m": geometry.col_size_m,
+        "cal_slope": model.cal_slope,
+        "cal_intercept": model.cal_intercept,
+        "rho_fat": model.rho_fat,
+        "rho_muscle": model.rho_muscle,
+        "rho_bone": model.rho_bone,
+        "bone_fraction": dict(model.bone_fraction),
+        "half_width_cap_m": dict(geometry.half_width_cap_m),
+        "symmetric_edge_tissues": sorted(geometry.symmetric_edge_tissues),
+        "pelvis_margin_m": geometry.pelvis_margin_m,
+        "borrow_distal_density": dict(model.borrow_distal_density),
+    }
+    (output_dir / "segment_profiles.json").write_text(json.dumps(meta, indent=2), encoding="utf-8")
+
+    table = Table(title="Segment profiles (mean over slices)", header_style="bold cyan")
+    for col in ("segment", "slices", "width cm", "fat %", "rho kg/m3"):
+        table.add_column(col)
+    for name, g in df.groupby("segment", sort=False):
+        table.add_row(
+            str(name),
+            str(len(g)),
+            f"{g['body_width_m'].mean() * 100:.1f}",
+            f"{g['fat_fraction'].mean() * 100:.0f}",
+            f"{g['density_kg_m3'].mean():.0f}",
+        )
+    console.print(table)
+    console.print(f"[green]Wrote {len(df)} slice rows to {output_dir}.[/green]")
+
+
+@app.command()
 def doctor() -> None:
     """Report pipeline status: installed deps, available providers, blocked features."""
     _run_doctor()
