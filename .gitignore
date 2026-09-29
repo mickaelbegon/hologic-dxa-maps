@@ -100,3 +100,6 @@ config/*_production.yml
 
 # pytest local temp
 .pytest_tmp/
+
+# Private data (real scans, CoR files) - never commit
+data_private/
