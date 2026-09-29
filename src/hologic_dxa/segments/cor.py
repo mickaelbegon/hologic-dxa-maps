@@ -12,13 +12,13 @@ MARKER_NAMES: tuple[str, ...] = (
     "atlanto_occipital",
     "cervicothoracic",
     "xiphoid",
-    "umbilicus",
     "lumbosacral",
     "crotch",
     "glenohumeral_L",
     "elbow_L",
     "wrist_L",
     "hand_end_L",
+    "iliac_crest_L",
     "hip_L",
     "knee_L",
     "ankle_L",
@@ -27,13 +27,14 @@ MARKER_NAMES: tuple[str, ...] = (
     "elbow_R",
     "wrist_R",
     "hand_end_R",
+    "iliac_crest_R",
     "hip_R",
     "knee_R",
     "ankle_R",
     "foot_end_R",
 )
 
-# xiphoid, umbilicus and crotch are trunk landmarks reserved for a future thorax /
+# xiphoid, iliac_crest_L/R and crotch are trunk landmarks reserved for a future thorax /
 # abdomen split (Hatze, Yeadon); no segment uses them yet.
 # Markers derived from others (never read from JSON).
 VIRTUAL_MARKERS: dict[str, tuple[str, str]] = {"hip_mid": ("hip_L", "hip_R")}
@@ -97,6 +98,27 @@ def load_cor_json(path: Path, grid_shape: tuple[int, int] = (106, 150)) -> Cor:
             )
         cor[name] = (row, col)
     return cor
+
+
+# Xiphisternal joint (T9-T10) as a fraction of the C7 -> L5/S1 distance. Approximate
+# (mean vertebral and disc heights); individual variation is about one vertebra (+-5 %).
+XIPHOID_FRACTION = 0.48
+
+
+def suggest_markers(cor: Cor) -> Cor:
+    """Estimated positions for markers that cannot be seen on DXA (currently ``xiphoid``).
+
+    Only markers missing from ``cor`` are suggested; they are estimates to confirm or
+    correct by hand, never measurements.
+    """
+    out: Cor = {}
+    if "xiphoid" not in cor and "cervicothoracic" in cor and "lumbosacral" in cor:
+        (r0, c0), (r1, c1) = cor["cervicothoracic"], cor["lumbosacral"]
+        out["xiphoid"] = (
+            r0 + XIPHOID_FRACTION * (r1 - r0),
+            c0 + XIPHOID_FRACTION * (c1 - c0),
+        )
+    return out
 
 
 def with_virtual_markers(cor: Cor) -> Cor:

@@ -20,8 +20,11 @@ results as relative profiles, not validated absolute densities.
   (`_L`/`_R`, patient side) `glenohumeral`, `elbow`, `wrist`, `hand_end`, `hip`,
   `knee`, `ankle`, `foot_end`. Markers are placed manually; there is no automatic
   detection in the package. `hip_mid` (pelvis distal end) is derived from the hips.
-  `xiphoid`, `umbilicus` and `crotch` are accepted but not used yet (reserved for a
-  thorax / abdomen split).
+  `xiphoid`, `iliac_crest_L/R` and `crotch` are accepted but not used yet (reserved
+  for a thorax / abdomen split). The xiphoid is not visible on DXA: the editor
+  suggests it at 48 % of the C7 to L5/S1 distance (about T9-T10, +-1 vertebra) for
+  you to confirm or correct. The iliac crest replaces the umbilicus, which cannot
+  be seen either (the crest lies 2-3 cm below its level).
 
 ## Segments
 

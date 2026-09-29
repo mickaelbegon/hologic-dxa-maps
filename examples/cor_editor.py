@@ -15,8 +15,12 @@ click the next *missing* marker is selected, so only new markers need placing.
 Mouse and keys
 --------------
     left click  place the selected marker      right click / Delete  erase it
+    S  accept the suggested position (dashed ring) of the selected marker
     Tab / Shift+Tab  next / previous marker    Enter  save
     Left / Right arrow  previous / next scan
+
+The xiphoid is not visible on DXA: it is suggested at 48 % of the C7 -> L5/S1 distance
+(about T9-T10, +-1 vertebra), to confirm or correct.  Suggestions are estimates.
 
 Image orientation: the left edge of the image is the patient's RIGHT (letter R).
 EXPERIMENTAL: display and marker placement only, no measurement is made here.
@@ -45,6 +49,7 @@ from hologic_dxa.segments import (
     build_segments,
     load_cor_json,
     load_whole_body_mu,
+    suggest_markers,
 )
 
 GRID_ROWS, GRID_COLS = 106, 150
@@ -52,12 +57,14 @@ GRID_ROWS, GRID_COLS = 106, 150
 MIDLINE_COLOR = "#55aaff"
 HEAD_COLOR = "#44ee77"
 LEFT_COLORS = {
-    "glenohumeral": "#ff4444", "elbow": "#dd2222", "wrist": "#ff7777", "hand_end": "#ffaaaa",
-    "hip": "#cc44ff", "knee": "#aa22dd", "ankle": "#881199", "foot_end": "#bb66dd",
+    "glenohumeral": "#ff4444", "elbow": "#dd2222", "wrist": "#ff7777",
+    "hand_end": "#ffaaaa", "iliac_crest": "#ee88ff", "hip": "#cc44ff",
+    "knee": "#aa22dd", "ankle": "#881199", "foot_end": "#bb66dd",
 }  # fmt: skip
 RIGHT_COLORS = {
-    "glenohumeral": "#ffaa33", "elbow": "#dd8822", "wrist": "#ffcc66", "hand_end": "#ffe0a0",
-    "hip": "#ff44cc", "knee": "#dd22aa", "ankle": "#991188", "foot_end": "#dd66bb",
+    "glenohumeral": "#ffaa33", "elbow": "#dd8822", "wrist": "#ffcc66",
+    "hand_end": "#ffe0a0", "iliac_crest": "#ff88dd", "hip": "#ff44cc",
+    "knee": "#dd22aa", "ankle": "#991188", "foot_end": "#dd66bb",
 }  # fmt: skip
 
 ENHANCEMENTS = [
@@ -189,6 +196,9 @@ class CorEditor(tk.Tk):
         self.lbl_scan.pack(side="left", padx=8)
         tk.Button(top, text=">", command=lambda: self._go(1)).pack(side="left")
         tk.Button(top, text="Save", bg="#a6e3a1", command=self._save).pack(side="right")
+        tk.Button(top, text="Use suggestion (S)", command=self._accept_suggestion).pack(
+            side="right", padx=6
+        )
 
         body = tk.Frame(self, bg=bg)
         body.pack(fill="both", expand=True, padx=8)
@@ -277,6 +287,11 @@ class CorEditor(tk.Tk):
         if name in self.joints:
             r, c = self.joints[name]
             self.lbl_info.config(text=f"{name}\nrow {r:.1f}  col {c:.1f}")
+        elif name in suggest_markers(self.joints):
+            r, c = suggest_markers(self.joints)[name]
+            self.lbl_info.config(
+                text=f"{name}\nnot placed\nsuggested: row {r:.1f} col {c:.1f}\n(S to accept)"
+            )
         else:
             self.lbl_info.config(text=f"{name}\nnot placed")
         self._draw()
@@ -288,6 +303,14 @@ class CorEditor(tk.Tk):
             if cand not in self.joints:
                 return cand
         return MARKER_NAMES[(i + 1) % n]
+
+    def _accept_suggestion(self) -> None:
+        suggestion = suggest_markers(self.joints).get(self.sel)
+        if suggestion is None:
+            self.status.set(f"No suggestion for {self.sel}")
+            return
+        self.joints[self.sel] = suggestion
+        self._select(self._next_missing(self.sel))
 
     def _on_lb(self, _event: object) -> None:
         sel = self.lb.curselection()
@@ -305,6 +328,8 @@ class CorEditor(tk.Tk):
             self._go(-1)
         elif k == "Right":
             self._go(1)
+        elif k in ("s", "S"):
+            self._accept_suggestion()
         elif k == "Delete":
             self.joints.pop(self.sel, None)
             self._select(self.sel)
@@ -352,6 +377,16 @@ class CorEditor(tk.Tk):
             ax.text(
                 row + 2, col, name.replace("_", " "), color=marker_color(name), fontsize=6.5,
                 va="center", alpha=1.0 if is_sel else 0.75,
+            )  # fmt: skip
+        for name, (row, col) in suggest_markers(self.joints).items():
+            big = name == self.sel
+            ax.plot(
+                row, col, "o", markerfacecolor="none", markeredgecolor=marker_color(name),
+                markersize=16 if big else 10, markeredgewidth=2, linestyle="none", zorder=9,
+            )  # fmt: skip
+            ax.text(
+                row + 2, col, f"{name} (suggested)", color=marker_color(name), fontsize=6.5,
+                va="center", style="italic", alpha=1.0 if big else 0.6,
             )  # fmt: skip
         label = dict(fontsize=9, fontweight="bold", va="center", color="white")
         ax.text(2, 75, "R", ha="left", **label)

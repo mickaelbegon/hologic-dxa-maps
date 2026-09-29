@@ -11,6 +11,7 @@ from pydicom.dataset import Dataset
 from hologic_dxa.segments import (
     CALIBRATION_STATUS,
     SEGMENT_DEFINITIONS,
+    XIPHOID_FRACTION,
     SliceGeometry,
     compute_segment_profiles,
     lateral_constraint,
@@ -19,6 +20,7 @@ from hologic_dxa.segments import (
     parse_r_file_images,
     profiles_to_dataframe,
     slice_segment,
+    suggest_markers,
 )
 from hologic_dxa.segments.whole_body import PEDESTALS
 
@@ -240,6 +242,27 @@ class TestNeckPelvisArmsHandsFeet:
     def test_new_markers_accepted_in_json(self, tmp_path):
         p = tmp_path / "cor.json"
         p.write_text(
-            json.dumps({"hand_end_L": [80, 90], "foot_end_R": [30, 140], "umbilicus": [53, 70]})
+            json.dumps(
+                {"hand_end_L": [80, 90], "foot_end_R": [30, 140], "iliac_crest_L": [60, 80]}
+            )
         )
-        assert set(load_cor_json(p)) == {"hand_end_L", "foot_end_R", "umbilicus"}
+        assert set(load_cor_json(p)) == {"hand_end_L", "foot_end_R", "iliac_crest_L"}
+
+
+class TestSuggestMarkers:
+    def test_xiphoid_on_the_c7_lumbosacral_line(self):
+        cor = {"cervicothoracic": (50.0, 30.0), "lumbosacral": (56.0, 80.0)}
+        row, col = suggest_markers(cor)["xiphoid"]
+        assert col == pytest.approx(30.0 + XIPHOID_FRACTION * 50.0)
+        assert row == pytest.approx(50.0 + XIPHOID_FRACTION * 6.0)
+
+    def test_no_suggestion_without_spine_markers(self):
+        assert suggest_markers({"cervicothoracic": (50.0, 30.0)}) == {}
+
+    def test_placed_marker_is_not_suggested(self):
+        cor = {
+            "cervicothoracic": (50.0, 30.0),
+            "lumbosacral": (56.0, 80.0),
+            "xiphoid": (52.0, 55.0),
+        }
+        assert suggest_markers(cor) == {}

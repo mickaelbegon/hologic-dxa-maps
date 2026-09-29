@@ -3,9 +3,11 @@
 from hologic_dxa.segments.cor import (
     MARKER_NAMES,
     SEGMENT_DEFINITIONS,
+    XIPHOID_FRACTION,
     SegmentDefinition,
     build_segments,
     load_cor_json,
+    suggest_markers,
 )
 from hologic_dxa.segments.profiles import (
     CALIBRATION_STATUS,
@@ -28,6 +30,7 @@ __all__ = [
     "CALIBRATION_STATUS",
     "MARKER_NAMES",
     "SEGMENT_DEFINITIONS",
+    "XIPHOID_FRACTION",
     "SegmentDefinition",
     "SegmentProfile",
     "SliceGeometry",
@@ -42,4 +45,5 @@ __all__ = [
     "parse_r_file_images",
     "profiles_to_dataframe",
     "slice_segment",
+    "suggest_markers",
 ]
