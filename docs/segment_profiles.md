@@ -71,3 +71,22 @@ tag values.
 - The foot is seen in projection (toes point up when supine), so `foot_end` gives
   only the projected length.
 - Pedestals and pixel pitch are empirical for Horizon W / APEX 13.6.
+
+## BodyLoop calibration bundle
+
+`hologic-dxa segment-profiles ... --sex male|female|other [--provenance LABEL]` also
+writes `dxa_bundle.json`, read by `bodyloop_anthropometrics` (`--dxa`) as a
+`DXACalibrationBundle`. The sex is never read from the DICOM: give it explicitly.
+
+- `regional_fat_fraction` (Tier 1): limb types pooled over left and right, weighted by
+  the `mu_H` integral of each slice.
+- `slice_fat_fraction` (Tier 3): per BSP segment (`thigh_left`, ...), proximal to
+  distal. A segment with any invalid slice is omitted and listed with its reason in
+  `omitted_segments`; nothing is padded. Hand and foot repeat their uniform value.
+- `segment_lengths_m`: CoR-to-CoR distances.
+- `calibration_status = empirical_uncalibrated`: BodyLoop adds an `[A]` warning.
+- `regional_bmc_g` is not produced, so Tier 2 cannot run from this bundle.
+
+Compared with the Hologic APEX regional fat percentage (fat / total mass, arms and
+legs, 6 scans), the slice-derived value is on average 2.9 points lower (SD 3.5); arms
+differ more (mean -4.3) than legs (mean -1.4).

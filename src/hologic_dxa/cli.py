@@ -522,13 +522,22 @@ def segment_profiles(
     ],
     output_dir: Annotated[Path, typer.Option("--output-dir", "-o")] = Path("output"),
     n_slices: Annotated[int, typer.Option("--n-slices", min=2, max=50)] = 10,
+    sex: Annotated[
+        str | None,
+        typer.Option("--sex", help="male, female or other: also writes dxa_bundle.json."),
+    ] = None,
+    provenance: Annotated[
+        str | None, typer.Option("--provenance", help="Scan label recorded in dxa_bundle.json.")
+    ] = None,
     log_level: Annotated[str, typer.Option("--log-level")] = "INFO",
 ) -> None:
     """Density profiles per body segment (EXPERIMENTAL, empirical calibration).
 
     Cuts each segment into slices perpendicular to its CoR-to-CoR axis and
     writes ``segment_profiles.csv`` and ``segment_profiles.json`` (parameters and
-    provenance) into --output-dir.  File names never depend on DICOM tag values.
+    provenance) into --output-dir.  With --sex, also writes ``dxa_bundle.json``
+    for the BodyLoop DXACalibrationBundle.  File names never depend on DICOM tag
+    values.
     """
     configure_logging(level=log_level)
     import hashlib
@@ -544,6 +553,7 @@ def segment_profiles(
         load_cor_json,
         load_whole_body_mu,
         profiles_to_dataframe,
+        to_calibration_bundle,
     )
 
     for label, p in (("DICOM", path), ("CoR JSON", cor)):
@@ -569,12 +579,29 @@ def segment_profiles(
         console.print("[yellow]No valid slice produced; check the CoR file.[/yellow]")
         raise typer.Exit(code=1)
 
+    source_sha256 = hashlib.sha256(path.read_bytes()).hexdigest()
+    bundle = None
+    if sex is not None:
+        try:
+            bundle = to_calibration_bundle(
+                profiles,
+                sex=sex,
+                provenance=provenance or f"hologic_dxa_{path.stem}_{source_sha256[:8]}",
+                n_slices=n_slices,
+            )
+        except ValueError as exc:
+            console.print(f"[red]{exc}[/red]")
+            raise typer.Exit(code=1) from exc
+
     output_dir.mkdir(parents=True, exist_ok=True)
     df.to_csv(output_dir / "segment_profiles.csv", index=False)
+    if bundle is not None:
+        (output_dir / "dxa_bundle.json").write_text(json.dumps(bundle, indent=2), encoding="utf-8")
+        console.print(f"Wrote {output_dir / 'dxa_bundle.json'}")
     meta = {
         "calibration_status": CALIBRATION_STATUS,
         "experimental": True,
-        "source_sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
+        "source_sha256": source_sha256,
         "n_slices": n_slices,
         "segments": [p.name for p in profiles],
         "row_size_m": geometry.row_size_m,

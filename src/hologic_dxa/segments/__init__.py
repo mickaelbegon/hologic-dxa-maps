@@ -1,5 +1,6 @@
 """Whole-body segment slicing and density profiles from Hologic DXA scans (experimental)."""
 
+from hologic_dxa.segments.bundle_export import bsp_segment_name, to_calibration_bundle
 from hologic_dxa.segments.cor import (
     MARKER_NAMES,
     SEGMENT_DEFINITIONS,
@@ -37,6 +38,7 @@ __all__ = [
     "SliceProfile",
     "TissueModel",
     "WholeBodyMu",
+    "bsp_segment_name",
     "build_segments",
     "compute_segment_profiles",
     "lateral_constraint",
@@ -46,4 +48,5 @@ __all__ = [
     "profiles_to_dataframe",
     "slice_segment",
     "suggest_markers",
+    "to_calibration_bundle",
 ]

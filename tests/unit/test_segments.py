@@ -12,7 +12,9 @@ from hologic_dxa.segments import (
     CALIBRATION_STATUS,
     SEGMENT_DEFINITIONS,
     XIPHOID_FRACTION,
+    SegmentProfile,
     SliceGeometry,
+    bsp_segment_name,
     compute_segment_profiles,
     lateral_constraint,
     load_cor_json,
@@ -21,6 +23,7 @@ from hologic_dxa.segments import (
     profiles_to_dataframe,
     slice_segment,
     suggest_markers,
+    to_calibration_bundle,
 )
 from hologic_dxa.segments.whole_body import PEDESTALS
 
@@ -266,3 +269,56 @@ class TestSuggestMarkers:
             "xiphoid": (52.0, 55.0),
         }
         assert suggest_markers(cor) == {}
+
+
+class TestBundleExport:
+    def _limb_profiles(self):
+        mu_h = _block(slice(40, 60), slice(0, 150))
+        mu_l = mu_h * 1.1
+        cor = {
+            "hip_L": (50.0, 10.0), "knee_L": (50.0, 50.0), "ankle_L": (50.0, 90.0),
+            "foot_end_L": (50.0, 120.0),
+        }
+        return compute_segment_profiles(mu_h, mu_l, cor, n_slices=6)
+
+    def test_side_names_follow_bsp_convention(self):
+        assert bsp_segment_name("thigh_L") == "thigh_left"
+        assert bsp_segment_name("forearm_R") == "forearm_right"
+        assert bsp_segment_name("trunk") == "trunk"
+
+    def test_bundle_keys_and_regional_pooling(self):
+        b = to_calibration_bundle(
+            self._limb_profiles(), sex="male", provenance="unit", n_slices=6
+        )
+        assert b["calibration_status"] == CALIBRATION_STATUS
+        assert b["slice_orientation"] == "proximal_to_distal"
+        assert set(b["regional_fat_fraction"]) == {"thigh", "shank"}
+        assert set(b["slice_fat_fraction"]) == {"thigh_left", "shank_left", "foot_left"}
+        assert all(len(v) == 6 for v in b["slice_fat_fraction"].values())
+        assert b["regional_fat_fraction"]["thigh"] == pytest.approx(
+            b["slice_fat_fraction"]["thigh_left"][0]
+        )
+
+    def test_uniform_segment_repeats_its_value(self):
+        b = to_calibration_bundle(
+            self._limb_profiles(), sex="female", provenance="unit", n_slices=6
+        )
+        assert len(set(b["slice_fat_fraction"]["foot_left"])) == 1
+
+    def test_segment_with_invalid_slice_is_omitted_not_padded(self):
+        prof = self._limb_profiles()
+        thigh = next(p for p in prof if p.name == "thigh_L")
+        broken = SegmentProfile(
+            thigh.name, thigh.tissue, thigh.proximal, thigh.distal, thigh.length_m,
+            [None, *thigh.slices[1:]],
+        )
+        others = [p for p in prof if p.name != "thigh_L"]
+        b = to_calibration_bundle([broken, *others], sex="male", provenance="u", n_slices=6)
+        assert "thigh_left" not in b["slice_fat_fraction"]
+        assert "1 of 6" in b["omitted_segments"]["thigh_left"]
+
+    def test_invalid_sex_and_no_limb_raise(self):
+        with pytest.raises(ValueError, match="sex"):
+            to_calibration_bundle(self._limb_profiles(), sex="x", provenance="u", n_slices=6)
+        with pytest.raises(ValueError, match="No limb"):
+            to_calibration_bundle([], sex="male", provenance="u", n_slices=6)
