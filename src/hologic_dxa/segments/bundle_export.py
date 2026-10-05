@@ -15,7 +15,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from hologic_dxa.segments.profiles import CALIBRATION_STATUS, SegmentProfile
+from hologic_dxa.segments.profiles import APEX_SCALED_STATUS, CALIBRATION_STATUS, SegmentProfile
 
 LIMB_TYPES = ("upper_arm", "forearm", "thigh", "shank")
 SEXES = ("male", "female", "other")
@@ -79,10 +79,21 @@ def to_calibration_bundle(
     if not regional:
         raise ValueError("No limb segment (upper_arm, forearm, thigh, shank) has valid slices.")
 
+    # The status describes the limb segments BodyLoop consumes; head, neck, trunk and
+    # pelvis are never rescaled to APEX.
+    exported = [
+        s
+        for seg in profiles
+        if seg.tissue in (*LIMB_TYPES, "hand", "foot") and bsp_segment_name(seg.name) in slice_fat
+        for s in seg.slices
+        if s is not None
+    ]
+    all_scaled = bool(exported) and all(s.scaled_to_apex for s in exported)
+
     return {
         "sex": sex,
         "provenance": provenance,
-        "calibration_status": CALIBRATION_STATUS,
+        "calibration_status": APEX_SCALED_STATUS if all_scaled else CALIBRATION_STATUS,
         "slice_orientation": "proximal_to_distal",
         "regional_fat_fraction": regional,
         "segment_lengths_m": lengths,

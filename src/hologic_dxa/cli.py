@@ -529,6 +529,13 @@ def segment_profiles(
     provenance: Annotated[
         str | None, typer.Option("--provenance", help="Scan label recorded in dxa_bundle.json.")
     ] = None,
+    apex_scale: Annotated[
+        bool,
+        typer.Option(
+            "--apex-scale/--no-apex-scale",
+            help="Rescale limb fat fractions to the APEX regional fat / (fat + lean).",
+        ),
+    ] = True,
     log_level: Annotated[str, typer.Option("--log-level")] = "INFO",
 ) -> None:
     """Density profiles per body segment (EXPERIMENTAL, empirical calibration).
@@ -546,6 +553,7 @@ def segment_profiles(
     import pydicom
 
     from hologic_dxa.segments import (
+        APEX_SCALED_STATUS,
         CALIBRATION_STATUS,
         SliceGeometry,
         TissueModel,
@@ -555,6 +563,9 @@ def segment_profiles(
         profiles_to_dataframe,
         to_calibration_bundle,
     )
+
+    from hologic_dxa.dicom.hologic_xml import parse_apex_xml
+    from hologic_dxa.segments.apex_scaling import rescale_to_apex
 
     for label, p in (("DICOM", path), ("CoR JSON", cor)):
         if not p.is_file():
@@ -574,6 +585,21 @@ def segment_profiles(
     profiles = compute_segment_profiles(
         mu.mu_h, mu.mu_l, cor_px, n_slices=n_slices, geometry=geometry, tissue_model=model
     )
+    scalings: list = []
+    if apex_scale:
+        regions = {
+            m.region: (m.fat_g, m.lean_g)
+            for m in parse_apex_xml(ds).measurements
+            if m.fat_g is not None and m.lean_g is not None
+        }
+        profiles, scalings, scale_warnings = rescale_to_apex(profiles, regions, model)
+        for msg in scale_warnings:
+            console.print(f"[yellow]APEX scaling: {msg}[/yellow]")
+        for sc in scalings:
+            console.print(
+                f"APEX scaling {sc.region}: slices {sc.fat_fraction_slices:.3f} -> "
+                f"APEX {sc.fat_fraction_apex:.3f} (x{sc.factor:.3f})"
+            )
     df = profiles_to_dataframe(profiles)
     if df.empty:
         console.print("[yellow]No valid slice produced; check the CoR file.[/yellow]")
@@ -599,7 +625,16 @@ def segment_profiles(
         (output_dir / "dxa_bundle.json").write_text(json.dumps(bundle, indent=2), encoding="utf-8")
         console.print(f"Wrote {output_dir / 'dxa_bundle.json'}")
     meta = {
-        "calibration_status": CALIBRATION_STATUS,
+        "calibration_status": APEX_SCALED_STATUS if scalings else CALIBRATION_STATUS,
+        "apex_scaling": [
+            {
+                "region": sc.region,
+                "fat_fraction_slices": sc.fat_fraction_slices,
+                "fat_fraction_apex": sc.fat_fraction_apex,
+                "factor": sc.factor,
+            }
+            for sc in scalings
+        ],
         "experimental": True,
         "source_sha256": source_sha256,
         "n_slices": n_slices,

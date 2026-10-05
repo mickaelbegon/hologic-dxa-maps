@@ -21,6 +21,7 @@ from scipy.ndimage import map_coordinates
 from hologic_dxa.segments.cor import Cor, SegmentDefinition, build_segments, with_virtual_markers
 
 CALIBRATION_STATUS = "empirical_uncalibrated"
+APEX_SCALED_STATUS = "apex_scaled_shape_uncalibrated"
 
 AllowedFn = Callable[[np.ndarray, np.ndarray], np.ndarray]
 
@@ -83,15 +84,18 @@ class TissueModel:
 
     def density(self, r_mean: float, tissue: str) -> tuple[float, float]:
         """Return (fat_fraction, density_kg_m3) for a mean R = mu_L / mu_H."""
-        f_bone = self.bone_fraction.get(tissue, self.default_bone_fraction)
         f_fat = float(np.clip(self.cal_slope * r_mean + self.cal_intercept, 0.0, 1.0))
+        return f_fat, self.density_from_fat_fraction(f_fat, tissue)
+
+    def density_from_fat_fraction(self, f_fat: float, tissue: str) -> float:
+        """2-component density [kg/m3] of soft tissue plus bone for a fat fraction."""
+        f_bone = self.bone_fraction.get(tissue, self.default_bone_fraction)
         f_soft = 1.0 - f_bone
-        rho = (
+        return float(
             self.rho_bone * f_bone
             + self.rho_fat * f_fat * f_soft
             + self.rho_muscle * (1.0 - f_fat) * f_soft
         )
-        return f_fat, float(rho)
 
 
 @dataclass(frozen=True)
@@ -109,6 +113,8 @@ class SliceProfile:
     mu_h_integral: float
     density_kg_m3: float
     density_source: str = "measured"
+    fat_scale: float = 1.0
+    scaled_to_apex: bool = False
 
 
 @dataclass(frozen=True)
@@ -377,7 +383,10 @@ def profiles_to_dataframe(profiles: list[SegmentProfile]) -> pd.DataFrame:
                     "mu_h_integral": s.mu_h_integral,
                     "density_kg_m3": s.density_kg_m3,
                     "density_source": s.density_source,
-                    "calibration_status": CALIBRATION_STATUS,
+                    "fat_scale": s.fat_scale,
+                    "calibration_status": (
+                        APEX_SCALED_STATUS if s.scaled_to_apex else CALIBRATION_STATUS
+                    ),
                 }
             )
     return pd.DataFrame(rows)

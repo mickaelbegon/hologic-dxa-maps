@@ -90,3 +90,22 @@ writes `dxa_bundle.json`, read by `bodyloop_anthropometrics` (`--dxa`) as a
 Compared with the Hologic APEX regional fat percentage (fat / total mass, arms and
 legs, 6 scans), the slice-derived value is on average 2.9 points lower (SD 3.5); arms
 differ more (mean -4.3) than legs (mean -1.4).
+
+## Rescaling to Hologic APEX regional values
+
+By default (`--apex-scale`, disable with `--no-apex-scale`) the limb fat fractions are
+multiplied by one factor per region ("L Arm", "R Arm", "L Leg", "R Leg") so that their
+mass-weighted mean equals the APEX `fat_g / (fat_g + lean_g)` (tag `0019,1000`). The
+shape of the profile along the limb is kept; the level becomes Hologic's. The weight of a
+slice is its `mu_H` integral times the slice thickness, a proxy for tissue mass.
+
+- Assumes APEX "L Arm" is the patient's left arm and includes the hand (idem for legs
+  and feet). Regions with a missing segment or missing APEX value are left unscaled,
+  with a warning.
+- Head, neck, trunk and pelvis are not rescaled.
+- `calibration_status` becomes `apex_scaled_shape_uncalibrated` for rescaled rows and for
+  a bundle whose limb segments are all rescaled; the profile shape stays empirical.
+- Only fat is rescaled. APEX gives BMC per whole arm / leg, and splitting it among upper
+  arm, forearm and hand would be a guess, so `regional_bmc_g` (Tier 2) is still absent.
+- Factors on the 6 test scans: 0.96 to 1.31 (arms 0.96-1.31, legs 0.96-1.13); the
+  uncalibrated relation underestimates arm fat most.

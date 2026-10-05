@@ -9,11 +9,13 @@ import pytest
 from pydicom.dataset import Dataset
 
 from hologic_dxa.segments import (
+    APEX_SCALED_STATUS,
     CALIBRATION_STATUS,
     SEGMENT_DEFINITIONS,
     XIPHOID_FRACTION,
     SegmentProfile,
     SliceGeometry,
+    TissueModel,
     bsp_segment_name,
     compute_segment_profiles,
     lateral_constraint,
@@ -21,6 +23,7 @@ from hologic_dxa.segments import (
     load_whole_body_mu,
     parse_r_file_images,
     profiles_to_dataframe,
+    rescale_to_apex,
     slice_segment,
     suggest_markers,
     to_calibration_bundle,
@@ -322,3 +325,89 @@ class TestBundleExport:
             to_calibration_bundle(self._limb_profiles(), sex="x", provenance="u", n_slices=6)
         with pytest.raises(ValueError, match="No limb"):
             to_calibration_bundle([], sex="male", provenance="u", n_slices=6)
+
+
+class TestApexScaling:
+    def _left_leg(self, ratio=1.1):
+        mu_h = _block(slice(40, 60), slice(0, 150))
+        cor = {
+            "hip_L": (50.0, 10.0), "knee_L": (50.0, 50.0), "ankle_L": (50.0, 90.0),
+            "foot_end_L": (50.0, 120.0),
+        }
+        return compute_segment_profiles(mu_h, mu_h * ratio, cor, n_slices=6)
+
+    @staticmethod
+    def _pooled(profiles):
+        num = den = 0.0
+        for seg in profiles:
+            w = seg.length_m / len(seg.slices)
+            for sl in seg.slices:
+                if sl is not None:
+                    num += sl.fat_fraction * sl.mu_h_integral * w
+                    den += sl.mu_h_integral * w
+        return num / den
+
+    def test_region_reaches_apex_fraction(self):
+        scaled, scalings, warns = rescale_to_apex(self._left_leg(), {"L Leg": (4000.0, 6000.0)})
+        assert warns[:0] == []
+        assert self._pooled(scaled) == pytest.approx(0.4, abs=1e-3)
+        assert scalings[0].fat_fraction_apex == pytest.approx(0.4)
+        assert scalings[0].factor == pytest.approx(scaled[0].slices[0].fat_scale)
+
+    def test_shape_ratio_is_preserved_and_density_recomputed(self):
+        original = self._left_leg(ratio=1.3)
+        scaled, _, _ = rescale_to_apex(original, {"L Leg": (3000.0, 7000.0)})
+        for a, b in zip(original, scaled, strict=True):
+            fa = [s.fat_fraction for s in a.slices if s]
+            fb = [s.fat_fraction for s in b.slices if s]
+            assert all(x > 0 for x in fa)
+            assert [y / x for x, y in zip(fa, fb, strict=True)] == pytest.approx(
+                [fb[0] / fa[0]] * len(fa)
+            )
+        thigh = next(p for p in scaled if p.name == "thigh_L").slices[0]
+        assert thigh.density_kg_m3 == pytest.approx(
+            TissueModel().density_from_fat_fraction(thigh.fat_fraction, "thigh")
+        )
+        assert thigh.scaled_to_apex
+
+    def test_inputs_are_not_modified(self):
+        original = self._left_leg()
+        before = original[0].slices[0].fat_fraction
+        rescale_to_apex(original, {"L Leg": (4000.0, 6000.0)})
+        assert original[0].slices[0].fat_fraction == before
+        assert not original[0].slices[0].scaled_to_apex
+
+    def test_incomplete_region_is_left_unscaled_with_warning(self):
+        mu_h = _block(slice(40, 60), slice(0, 150))
+        cor = {"hip_L": (50.0, 10.0), "knee_L": (50.0, 50.0)}
+        profiles = compute_segment_profiles(mu_h, mu_h * 1.1, cor, n_slices=6)
+        scaled, scalings, warns = rescale_to_apex(profiles, {"L Leg": (4000.0, 6000.0)})
+        assert scalings == []
+        assert any("segments missing" in w for w in warns)
+        assert not scaled[0].slices[0].scaled_to_apex
+
+    def test_missing_apex_values_warn(self):
+        _, scalings, warns = rescale_to_apex(self._left_leg(), {})
+        assert scalings == []
+        assert any("no APEX" in w for w in warns)
+
+    def test_unreachable_target_is_not_forced(self):
+        # R = 2.2 gives a zero fat fraction everywhere: no factor can reach 40 %
+        _, scalings, warns = rescale_to_apex(
+            self._left_leg(ratio=2.2), {"L Leg": (4000.0, 6000.0)}
+        )
+        assert scalings == []
+        assert any("unreachable" in w for w in warns)
+
+    def test_high_target_saturates_without_exceeding_one(self):
+        scaled, scalings, _ = rescale_to_apex(self._left_leg(), {"L Leg": (9000.0, 1000.0)})
+        assert all(s.fat_fraction <= 1.0 for p in scaled for s in p.slices if s)
+        assert self._pooled(scaled) == pytest.approx(0.9, abs=2e-3)
+        assert scalings[0].factor > 1.0
+
+    def test_bundle_status_reflects_scaling(self):
+        scaled, _, _ = rescale_to_apex(self._left_leg(), {"L Leg": (4000.0, 6000.0)})
+        bundle = to_calibration_bundle(scaled, sex="male", provenance="u", n_slices=6)
+        assert bundle["calibration_status"] == APEX_SCALED_STATUS
+        plain = to_calibration_bundle(self._left_leg(), sex="male", provenance="u", n_slices=6)
+        assert plain["calibration_status"] == CALIBRATION_STATUS
